@@ -1,0 +1,14 @@
+#!/bin/sh
+echo "🔍 Ejecutando pre-commit hook de Bakandeya..."
+
+# Ejecutar pytest para asegurar que los agentes no están rotos
+python -m pytest tests/
+RESULT=$?
+
+if [ $RESULT -ne 0 ]; then
+  echo "❌ Los tests locales han fallado. Corrige los problemas antes de hacer commit."
+  exit 1
+fi
+
+echo "✅ Todos los tests pasaron. Commit permitido."
+exit 0

@@ -1,0 +1,200 @@
+import os
+import sys
+import json
+import uuid
+import unicodedata
+import argparse
+from dotenv import load_dotenv
+
+# Asegurar que el directorio raíz está en el path para las importaciones de lib
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+load_dotenv()
+
+import lib.sheets as sheets
+import lib.gemini_client as gemini_client
+
+def normalizar_nombre(texto):
+    """
+    Normaliza el texto quitando acentos, pasándolo a minúsculas y eliminando
+    espacios y prefijos comunes para una comparación de deduplicación más limpia.
+    """
+    if not texto:
+        return ""
+    texto = texto.lower().strip()
+    # Eliminar acentos
+    texto = ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
+    
+    # Eliminar prefijos comunes
+    prefijos = ["ayuntamiento de ", "ayuntamiento ", "concello de ", "concello ", "ayto de ", "concejo de ", "sala de conciertos ", "sala ", "festival de musica ", "festival ", "fest "]
+    for prefijo in prefijos:
+        if texto.startswith(prefijo):
+            texto = texto[len(prefijo):]
+            
+    # Eliminar sufijos comunes
+    sufijos = [" festival", " fest", " sala"]
+    for sufijo in sufijos:
+        if texto.endswith(sufijo):
+            texto = texto[:-len(sufijo)]
+            
+    return texto.replace(" ", "").replace("-", "").replace("_", "").strip()
+
+def obtener_resultados_busqueda(query, max_results=8):
+    """
+    Realiza una búsqueda en DuckDuckGo y devuelve la lista de resultados usando la librería ddgs.
+    """
+    from ddgs import DDGS
+    try:
+        with DDGS() as ddgs:
+            return list(ddgs.text(query, max_results=max_results))
+    except Exception as e:
+        print(f"[scout_descubridor.py] Error al buscar '{query}': {e}")
+        return []
+
+def extraer_candidatos_con_ia(resultados, tipo, region):
+    """
+    Utiliza Gemini para analizar snippets de búsqueda y extraer nombres de candidatos estructurados.
+    """
+    if not resultados:
+        return []
+        
+    res_str = ""
+    for idx, r in enumerate(resultados, 1):
+        res_str += f"[{idx}] Título: {r.get('title')}\n    URL: {r.get('href')}\n    Snippet: {r.get('body')}\n\n"
+        
+    prompt = (
+        f"Analiza los siguientes resultados de búsqueda web para encontrar nombres de {tipo}s en la región/provincia '{region}':\n\n"
+        f"{res_str}\n"
+        f"Tu objetivo es extraer una lista de entidades reales de tipo '{tipo}' que pertenezcan a la zona geográfica de '{region}'.\n"
+        "Reglas:\n"
+        f"1. Si el tipo es 'ayuntamiento', extrae únicamente el nombre oficial del ayuntamiento o concello (ej: 'Ayuntamiento de Vigo', 'Concello de Lalín') y su localidad.\n"
+        f"2. Si el tipo es 'festival', extrae el nombre oficial del festival de música o ciclo de conciertos (ej: 'Festival PortAmérica', 'O Son do Camiño') y su localidad.\n"
+        f"3. Si el tipo es 'sala', extrae el nombre de la sala de conciertos, pub de música en vivo o club y su localidad.\n"
+        "4. Ignora directorios genéricos, agencias, turoperadores o noticias. Solo extrae entidades reales.\n"
+        "5. Devuelve estrictamente un objeto JSON con el siguiente formato exacto, sin bloques de código, sin markdown ni explicaciones:\n"
+        "{\n"
+        "  \"candidatos\": [\n"
+        "    {\n"
+        "      \"nombre\": \"Nombre oficial de la entidad\",\n"
+        "      \"ciudad\": \"Localidad/Municipio\"\n"
+        "    }\n"
+        "  ]\n"
+        "}"
+    )
+    
+    system_prompt = (
+        "Eres un extractor experto de entidades geográficas y culturales a partir de textos de búsqueda. "
+        "Tu única salida posible debe ser un objeto JSON válido según el esquema solicitado."
+    )
+    
+    try:
+        ans = gemini_client.generar_texto_gemini(
+            prompt=prompt,
+            model_name="gemini-2.5-flash",
+            system_instruction=system_prompt,
+            temperature=0.1
+        )
+        if ans:
+            ans_clean = ans.strip()
+            if ans_clean.startswith("```json"):
+                ans_clean = ans_clean.split("```json")[1].split("```")[0].strip()
+            elif ans_clean.startswith("```"):
+                ans_clean = ans_clean.split("```")[1].split("```")[0].strip()
+            
+            data = json.loads(ans_clean)
+            return data.get("candidatos", [])
+        return []
+    except Exception as e:
+        print(f"[scout_descubridor.py] Error al extraer candidatos con IA: {e}. Respuesta: {ans if 'ans' in locals() else 'None'}")
+        return []
+
+def descubrir_y_añadir_leads(region, tipo, limite=10):
+    """
+    Busca leads de un tipo específico en una región/provincia, los deduplica contra
+    los existentes en la Google Sheet, y los crea masivamente en estado 'nuevo'.
+    """
+    print(f"[scout_descubridor.py] Iniciando descubrimiento de {tipo}s en la región/provincia: {region}")
+    
+    # 1. Generar la query de búsqueda adecuada
+    if tipo == "ayuntamiento":
+        query = f"municipios y ayuntamientos de la provincia de {region}"
+    elif tipo == "festival":
+        query = f"festivales de musica ciclos conciertos {region}"
+    else:
+        query = f"salas de conciertos locales de musica en vivo {region}"
+        
+    print(f"[scout_descubridor.py] Buscando en DuckDuckGo con query: '{query}'...")
+    resultados = obtener_resultados_busqueda(query, max_results=10)
+    
+    if not resultados:
+        print("[scout_descubridor.py] No se obtuvieron resultados de búsqueda. Abortando.")
+        return 0
+        
+    # 2. Extraer candidatos usando Gemini
+    candidatos = extraer_candidatos_con_ia(resultados, tipo, region)
+    print(f"[scout_descubridor.py] IA extrajo {len(candidatos)} posibles candidatos.")
+    
+    if not candidatos:
+        print("[scout_descubridor.py] No se extrajeron candidatos válidos.")
+        return 0
+        
+    # 3. Cargar leads existentes para deduplicación
+    leads_existentes = sheets.obtener_leads()
+    nombres_existentes_normalizados = {normalizar_nombre(l.get("nombre_sala")) for l in leads_existentes if l.get("nombre_sala")}
+    
+    leads_a_crear = []
+    
+    for cand in candidatos:
+        nombre = cand.get("nombre")
+        ciudad = cand.get("ciudad") or region
+        
+        if not nombre:
+            continue
+            
+        nombre_norm = normalizar_nombre(nombre)
+        if nombre_norm in nombres_existentes_normalizados:
+            print(f"[scout_descubridor.py] Ignorando '{nombre}' (Ya existe en la base de datos).")
+            continue
+            
+        # Generar ID de 8 caracteres único para no colisionar
+        lead_id = f"lead_{uuid.uuid4().hex[:5]}"
+        
+        nuevo_lead = {
+            "id": lead_id,
+            "nombre_sala": nombre,
+            "ciudad": ciudad,
+            "region": region,
+            "tipo": tipo,
+            "fuente": f"Scout Descubridor: {region}",
+            "estado": "nuevo",
+            "notas": f"Descubierto automáticamente por el agente Scout Descubridor."
+        }
+        
+        leads_a_crear.append(nuevo_lead)
+        nombres_existentes_normalizados.add(nombre_norm) # Prevenir duplicación en la misma corrida
+        
+        if len(leads_a_crear) >= limite:
+            break
+            
+    if not leads_a_crear:
+        print("[scout_descubridor.py] Todos los candidatos descubiertos ya existían en la Google Sheet.")
+        return 0
+        
+    print(f"[scout_descubridor.py] Insertando {len(leads_a_crear)} nuevos leads en la Google Sheet...")
+    exito = sheets.crear_leads(leads_a_crear)
+    
+    if exito:
+        print(f"[scout_descubridor.py] Proceso completado. Se añadieron {len(leads_a_crear)} leads.")
+        return len(leads_a_crear)
+    else:
+        print("[scout_descubridor.py] Error al insertar leads en la Google Sheet.")
+        return 0
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Agente Scout Descubridor para búsqueda activa de leads.")
+    parser.add_argument("--region", type=str, required=True, help="Región o Provincia donde buscar.")
+    parser.add_argument("--tipo", type=str, required=True, choices=["sala", "festival", "ayuntamiento"], help="Tipo de entidad a buscar.")
+    parser.add_argument("--limit", type=int, default=10, help="Límite máximo de nuevos leads a añadir.")
+    args = parser.parse_args()
+    
+    descubrir_y_añadir_leads(region=args.region, tipo=args.tipo, limite=args.limit)

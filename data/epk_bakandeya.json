@@ -1,0 +1,34 @@
+{
+  "nombre": "Bakandeya",
+  "origen": "Madrid",
+  "estilo": "Electrobasureo (Fusión de electrónica, percusión reciclada, beatbox e instrumentos acústicos)",
+  "integrantes": [
+    "Jon",
+    "Jose (Filgue)",
+    "Elyar",
+    "Raúl"
+  ],
+  "influencias": [
+    "reggae",
+    "música balcánica",
+    "klezmer",
+    "jazz",
+    "música oriental",
+    "drum & bass",
+    "techno"
+  ],
+  "descripcion_corta": "Una banda que transforma la electrónica, la percusión y la improvisación en una experiencia vibrante y festiva. A partir de una combinación de beatbox, loops en vivo, violín y percusiones construidas con materiales reciclados, el grupo desarrolla un lenguaje propio donde conviven influencias del reggae, la música balcánica, el jazz, el klezmer y la electrónica contemporánea.",
+  "biografia_completa": "Bakandeya es una banda afincada en Madrid que desarrolla una propuesta musical propia basada en la fusión de electrónica, percusión reciclada, beatbox e instrumentos acústicos. La agrupación define su estilo como 'electrobasureo', una combinación de ritmos electrónicos y percusiones construidas a partir de materiales reutilizados. Reúne influencias procedentes de tradiciones musicales muy diversas, entre ellas el reggae, la música balcánica, el klezmer, el jazz, la música oriental, el drum & bass y el techno. Esta variedad de referencias se traduce en una propuesta dinámica y difícil de encasillar, caracterizada por la improvisación, la riqueza rítmica y una fuerte conexión con el público.",
+  "enlaces": {
+    "spotify": "https://open.spotify.com/artist/tu_id_de_artista",
+    "youtube_directo": "https://www.youtube.com/watch?v=tu_video_directo",
+    "instagram": "https://www.instagram.com/bakandeya",
+    "dossier_epk": "https://drive.google.com/file/d/tu_dossier_pdf"
+  },
+  "rider_tecnico": {
+    "descripcion": "Loops en vivo, violín (acústico con previo/pastilla), beatbox (micro vocal dinámico), percusión reciclada (varias salidas balanceadas). Requiere envío a mesa de mezclas para monitorización y PA.",
+    "canales_estimados": 6
+  },
+  "cache_objetivo": "A convenir (rango sugerido: 800€ - 1500€ dependiendo del aforo, gastos de desplazamiento y tipo de evento)",
+  "disponibilidad": "Disponible para contratación nacional e internacional. Flexibilidad los fines de semana y temporada de festivales."
+}

@@ -1,0 +1,22 @@
+# Credenciales y variables de entorno
+.env
+credentials_service_account.json
+credentials.json
+token.json
+
+# Entorno virtual de Python
+.venv/
+venv/
+env/
+
+# Cachés de Python y Pytest
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Archivos de configuración de editores/IDE y temporales
+.claude/
+.agents/
+.vscode/
+.idea/
+.DS_Store

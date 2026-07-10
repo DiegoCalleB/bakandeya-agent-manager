@@ -16,6 +16,56 @@ load_dotenv()
 import lib.sheets as sheets
 import lib.gemini_client as gemini_client
 
+# Ranking de niveles de confianza. La IA etiqueta cada dato extraído con uno de estos
+# niveles; solo escribimos en la Sheet los de confianza "alta". Los demás se anotan como
+# sugerencias para revisión humana. Esto materializa la regla innegociable de verificación.
+NIVELES_CONFIANZA = {"alta": 3, "media": 2, "baja": 1}
+
+
+def _procesar_campos_extraidos(data, campos, umbral="alta"):
+    """
+    Separa los campos extraídos por la IA en (aceptados, sugerencias).
+
+    Cada campo en `data` puede venir de dos formas:
+      - Estructurado: {"valor": ..., "confianza": "alta|media|baja", "fuente": "[n] o URL"}
+      - Plano (retrocompatibilidad con mocks/tests o funciones antiguas): el valor directo.
+
+    Devuelve:
+      - aceptados: dict {campo: valor} SOLO con los datos de confianza >= umbral.
+      - sugerencias: lista de strings legibles con los datos de confianza insuficiente,
+        para dejarlos en `notas` sin escribirlos como si fueran verificados.
+    """
+    aceptados = {}
+    sugerencias = []
+    umbral_num = NIVELES_CONFIANZA.get(umbral, 3)
+
+    for campo in campos:
+        item = data.get(campo)
+        if item is None:
+            continue
+
+        if isinstance(item, dict):
+            valor = item.get("valor")
+            confianza = str(item.get("confianza") or "baja").lower()
+            fuente = item.get("fuente")
+        else:
+            # Valor plano: asumimos que viene de una fuente ya fiable (retrocompatibilidad).
+            valor = item
+            confianza = "alta"
+            fuente = None
+
+        # Descartar vacíos y nulos textuales ("null", "none", "n/a"...).
+        if valor is None or str(valor).strip().lower() in ("", "null", "none", "n/a"):
+            continue
+
+        if NIVELES_CONFIANZA.get(confianza, 1) >= umbral_num:
+            aceptados[campo] = valor
+        else:
+            sugerencias.append(f"{campo}={valor} (confianza {confianza}, fuente {fuente or '?'})")
+
+    return aceptados, sugerencias
+
+
 def inferir_tipo_lead(nombre_lead):
     """
     Infiere si el lead es una 'sala', un 'festival' o un 'ayuntamiento' basándose en palabras clave.
@@ -61,10 +111,7 @@ def seleccionar_web_oficial_con_ia(nombre_sala, ciudad, resultados):
             temperature=0.1
         )
         if ans:
-            ans_clean = ans.strip()
-            if ans_clean.startswith("`") and ans_clean.endswith("`"):
-                ans_clean = ans_clean.strip("`").strip()
-                ans_clean = ans.strip("`").strip()
+            ans_clean = ans.strip().strip("`").strip()
             if ans_clean.upper() == "NULL" or "http" not in ans_clean:
                 return None
             return ans_clean
@@ -131,33 +178,43 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
         f"{objetivo_contacto}\n\n"
         "Reglas:\n"
         "- Extrae solo datos de contacto reales de la entidad, no de empresas terceras ni directorios de entradas genéricos.\n"
-        "- Devuelve estrictamente un objeto JSON plano, sin bloques de código, markdown ni explicaciones, con este esquema:\n"
+        "- Para CADA dato indica tu nivel de confianza y de dónde lo sacaste:\n"
+        "    * confianza='alta' solo si el dato aparece literal y claramente asociado a ESTA entidad en los snippets.\n"
+        "    * confianza='media' si lo deduces de forma razonable pero no es literal.\n"
+        "    * confianza='baja' si es una suposición. NUNCA inventes un dato con confianza alta.\n"
+        "    * fuente = el índice del snippet que respalda el dato (ej: '[2]'), o null si no lo viste.\n"
+        "- Si no encuentras un campo, pon valor=null y confianza='baja'.\n"
+        "- Devuelve un objeto JSON con este esquema exacto (cada campo es un objeto con valor/confianza/fuente):\n"
         "{\n"
-        "  \"email\": \"email o null\",\n"
-        "  \"telefono\": \"telefono o null\",\n"
-        "  \"instagram\": \"instagram o null\",\n"
-        "  \"website\": \"url o null\",\n"
-        "  \"genero\": \"genero o null\"\n"
+        "  \"email\":     {\"valor\": \"email o null\",     \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
+        "  \"telefono\":  {\"valor\": \"telefono o null\",  \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
+        "  \"instagram\": {\"valor\": \"instagram o null\", \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
+        "  \"website\":   {\"valor\": \"url o null\",       \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
+        "  \"genero\":    {\"valor\": \"genero o null\",    \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"}\n"
         "}"
     )
-    
+
+    ans = gemini_client.generar_texto_gemini(
+        prompt=prompt,
+        model_name="gemini-2.5-flash",
+        temperature=0.1,
+        forzar_json=True  # JSON mode: la respuesta es siempre JSON válido, sin fences.
+    )
+    if not ans:
+        return {}
+
     try:
-        ans = gemini_client.generar_texto_gemini(
-            prompt=prompt,
-            model_name="gemini-2.5-flash",
-            temperature=0.1
-        )
-        if ans:
-            ans_clean = ans.strip()
-            if ans_clean.startswith("```json"):
-                ans_clean = ans_clean.split("```json")[1].split("```")[0].strip()
-            elif ans_clean.startswith("```"):
-                ans_clean = ans_clean.split("```")[1].split("```")[0].strip()
-            return json.loads(ans_clean)
-        return {}
+        data = json.loads(ans)
     except Exception as e:
-        print(f"[scout.py] Error al extraer de snippets con IA: {e}")
+        print(f"[scout.py] Error al parsear JSON de Gemini (snippets): {e}. Respuesta: {ans}")
         return {}
+
+    aceptados, sugerencias = _procesar_campos_extraidos(
+        data, campos=["email", "telefono", "instagram", "website", "genero"]
+    )
+    if sugerencias:
+        aceptados["_sugerencias"] = sugerencias
+    return aceptados
 
 def buscar_web_sala(nombre_sala, ciudad):
     """
@@ -243,45 +300,136 @@ def extraer_datos_contacto(texto, url_origen, tipo="sala"):
     prompt = (
         f"Analiza el siguiente texto plano extraído de la página web '{url_origen}' de la entidad (tipo: {tipo}) y extrae la información de contacto:\n\n"
         f"{texto}\n\n"
-        "Devuelve la respuesta estrictamente en formato JSON con la siguiente estructura (si no encuentras un campo, déjalo vacío o pon null):\n"
-        "{\n"
-        '  "email": "correo@sala.com",\n'
-        '  "telefono": "+34...",\n'
-        '  "instagram": "@nombre_usuario",\n'
-        '  "aforo": 300,\n'
-        '  "genero": "genero o null"\n'
-        "}\n"
         "Reglas:\n"
         f"{objetivo_contacto}\n"
-        "3. Devuelve únicamente el objeto JSON crudo, sin bloques de código markdown, explicaciones ni formato adicional."
+        "- Para CADA dato indica confianza y fuente:\n"
+        "    * confianza='alta' solo si el dato aparece literal en el texto de la web.\n"
+        "    * confianza='media' si lo deduces razonablemente; 'baja' si es una suposición.\n"
+        "    * NUNCA inventes un dato con confianza alta. fuente = fragmento/sección donde aparece, o null.\n"
+        "- Si no encuentras un campo, pon valor=null y confianza='baja'.\n"
+        "- Devuelve un objeto JSON con este esquema exacto (cada campo es un objeto valor/confianza/fuente):\n"
+        "{\n"
+        '  "email":     {"valor": "correo@sala.com o null", "confianza": "alta|media|baja", "fuente": "texto o null"},\n'
+        '  "telefono":  {"valor": "+34... o null",          "confianza": "alta|media|baja", "fuente": "texto o null"},\n'
+        '  "instagram": {"valor": "@usuario o null",        "confianza": "alta|media|baja", "fuente": "texto o null"},\n'
+        '  "aforo":     {"valor": 300,                       "confianza": "alta|media|baja", "fuente": "texto o null"},\n'
+        '  "genero":    {"valor": "genero o null",          "confianza": "alta|media|baja", "fuente": "texto o null"}\n'
+        "}"
     )
-    
+
     system_prompt = (
         "Eres un analizador de textos web experto en extracción de datos de contacto. "
         "Tu única salida posible debe ser un objeto JSON válido según el esquema solicitado."
     )
-    
+
     respuesta = gemini_client.generar_texto_gemini(
-        prompt, 
-        model_name="gemini-2.5-flash", 
+        prompt,
+        model_name="gemini-2.5-flash",
         system_instruction=system_prompt,
-        temperature=0.2
+        temperature=0.2,
+        forzar_json=True  # JSON mode: respuesta siempre JSON válido, sin fences.
     )
-    
+
     if not respuesta:
         return {}
-        
+
     try:
-        res_limpia = respuesta.strip()
-        if res_limpia.startswith("```json"):
-            res_limpia = res_limpia.split("```json")[1].split("```")[0].strip()
-        elif res_limpia.startswith("```"):
-            res_limpia = res_limpia.split("```")[1].split("```")[0].strip()
-            
-        return json.loads(res_limpia)
+        data = json.loads(respuesta)
     except Exception as e:
-        print(f"[scout.py] Error al parsear JSON de Claude: {e}. Respuesta: {respuesta}")
+        print(f"[scout.py] Error al parsear JSON de Gemini (web): {e}. Respuesta: {respuesta}")
         return {}
+
+    aceptados, sugerencias = _procesar_campos_extraidos(
+        data, campos=["email", "telefono", "instagram", "aforo", "genero"]
+    )
+    if sugerencias:
+        aceptados["_sugerencias"] = sugerencias
+    return aceptados
+
+def buscar_aforo_especifico(nombre_sala, ciudad):
+    """
+    Realiza una búsqueda en DuckDuckGo dirigida a encontrar el aforo o capacidad del local
+    y lo extrae usando Gemini.
+    """
+    query = f"{nombre_sala} {ciudad} aforo capacidad personas"
+    print(f"[scout.py] Buscando aforo específico con query: '{query}'...")
+    resultados = obtener_resultados_busqueda(query, max_results=5)
+    if not resultados:
+        return None
+        
+    res_str = ""
+    for idx, r in enumerate(resultados, 1):
+        res_str += f"[{idx}] Título: {r.get('title')}\n    Snippet: {r.get('body')}\n\n"
+        
+    prompt = (
+        f"Analiza los siguientes snippets de resultados de búsqueda para encontrar el aforo, capacidad máxima de personas o limitación de espacio de la sala de conciertos '{nombre_sala}' en '{ciudad}':\n\n"
+        f"{res_str}\n"
+        "Reglas:\n"
+        "1. Extrae únicamente el número entero que representa la capacidad de personas (ej. si dice 'aforo de 300 personas', devuelve 300).\n"
+        "2. Si hay múltiples espacios con distintos aforos, selecciona el principal o el de la sala de conciertos.\n"
+        "3. Devuelve únicamente el número entero en texto plano. Si no se menciona ningún aforo o capacidad numérica razonable, devuelve únicamente 'NULL'."
+    )
+    
+    try:
+        ans = gemini_client.generar_texto_gemini(
+            prompt=prompt,
+            model_name="gemini-2.5-flash",
+            temperature=0.1
+        )
+        if ans:
+            ans_clean = ans.strip().upper()
+            if "NULL" in ans_clean:
+                return None
+            digits = "".join(c for c in ans_clean if c.isdigit())
+            if digits:
+                return int(digits)
+        return None
+    except Exception as e:
+        print(f"[scout.py] Error al extraer aforo específico: {e}")
+        return None
+
+def buscar_genero_especifico(nombre_sala, ciudad, tipo):
+    """
+    Realiza una búsqueda en DuckDuckGo dirigida a encontrar el estilo/género musical principal
+    que programa la sala o festival y lo extrae con Gemini.
+    """
+    if tipo == "ayuntamiento":
+        return "Varios / Festivo"
+        
+    query = f"{nombre_sala} {ciudad} estilo musical programación conciertos género"
+    print(f"[scout.py] Buscando género específico con query: '{query}'...")
+    resultados = obtener_resultados_busqueda(query, max_results=5)
+    if not resultados:
+        return None
+        
+    res_str = ""
+    for idx, r in enumerate(resultados, 1):
+        res_str += f"[{idx}] Título: {r.get('title')}\n    Snippet: {r.get('body')}\n\n"
+        
+    prompt = (
+        f"Analiza los siguientes snippets de resultados de búsqueda para determinar qué estilo o género de música (ej: Rock, Indie, Electrónica, Jazz, Pop, etc.) se programa habitualmente en la entidad '{nombre_sala}' en '{ciudad}':\n\n"
+        f"{res_str}\n"
+        "Reglas:\n"
+        "1. Identifica el género o géneros musicales dominantes (ej: 'Rock / Indie', 'Jazz', 'Electrónica / Techno', 'Pop').\n"
+        "2. Sé breve y conciso (máximo 3 palabras).\n"
+        "3. Si los resultados son ambiguos o no mencionan estilos de música concretos, devuelve 'Varios' o 'N/A'.\n"
+        "4. Devuelve únicamente la respuesta en texto plano sin markdown, sin comillas ni explicaciones."
+    )
+    
+    try:
+        ans = gemini_client.generar_texto_gemini(
+            prompt=prompt,
+            model_name="gemini-2.5-flash",
+            temperature=0.2
+        )
+        if ans:
+            ans_clean = ans.strip()
+            if len(ans_clean) < 45:
+                return ans_clean
+        return None
+    except Exception as e:
+        print(f"[scout.py] Error al extraer género específico: {e}")
+        return None
 
 def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
     """
@@ -292,8 +440,8 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
     leads = sheets.obtener_leads(estado="nuevo")
     
     if region:
-        leads = [l for l in leads if l.get("region") and region.lower() in str(l.get("region")).lower()]
-        print(f"[scout.py] Filtrando leads en estado 'nuevo' para la región: '{region}'. Encontrados: {len(leads)}")
+        leads = [l for l in leads if (l.get("region") and region.lower() in str(l.get("region")).lower()) or (l.get("ciudad") and region.lower() in str(l.get("ciudad")).lower())]
+        print(f"[scout.py] Filtrando leads en estado 'nuevo' para la región/ciudad: '{region}'. Encontrados: {len(leads)}")
         
     # Filtrar leads a los que les falte algún dato clave
     leads_incompletos = []
@@ -340,7 +488,11 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
             
         results = obtener_resultados_busqueda(query_busqueda, max_results=8)
         datos_snippets = extraer_datos_contacto_de_snippets(nombre_sala, ciudad, results, tipo=tipo)
-        
+
+        # Acumula los datos de confianza media/baja que la IA no dio por seguros, para
+        # dejarlos en 'notas' como pistas a verificar en vez de escribirlos como verificados.
+        sugerencias_totales = list(datos_snippets.get("_sugerencias") or [])
+
         email = datos_snippets.get("email")
         telefono = datos_snippets.get("telefono")
         instagram = datos_snippets.get("instagram")
@@ -363,7 +515,8 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
             
             if texto_home:
                 datos_web = extraer_datos_contacto(texto_home, web_descargable, tipo=tipo)
-                
+                sugerencias_totales.extend(datos_web.get("_sugerencias") or [])
+
                 # Combinar datos
                 if datos_web.get("email") and not email:
                     email = datos_web["email"]
@@ -382,7 +535,8 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
                     print(f"[scout.py] Buscando en página de contacto: {url_contacto}")
                     texto_contacto, _ = descargar_texto_pagina(url_contacto)
                     datos_contacto = extraer_datos_contacto(texto_contacto, url_contacto, tipo=tipo)
-                    
+                    sugerencias_totales.extend(datos_contacto.get("_sugerencias") or [])
+
                     if datos_contacto.get("email") and not email:
                         email = datos_contacto["email"]
                     if datos_contacto.get("telefono") and not telefono:
@@ -413,6 +567,7 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
             
             if results_fallback:
                 datos_fallback = extraer_datos_contacto_de_snippets(nombre_sala, ciudad, results_fallback, tipo=tipo)
+                sugerencias_totales.extend(datos_fallback.get("_sugerencias") or [])
                 if datos_fallback.get("email") and not email:
                     email = datos_fallback["email"]
                 if datos_fallback.get("telefono") and not telefono:
@@ -424,6 +579,17 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
                 if datos_fallback.get("genero") and not genero:
                     genero = datos_fallback["genero"]
                     
+        # 3.5 Búsquedas ultra-dirigidas de aforo y género si siguen vacíos
+        if not aforo or int(aforo or 0) == 0:
+            aforo_especifico = buscar_aforo_especifico(nombre_sala, ciudad)
+            if aforo_especifico:
+                aforo = aforo_especifico
+                
+        if not genero or genero.strip().lower() in ["", "varios", "n/a", "null"]:
+            genero_especifico = buscar_genero_especifico(nombre_sala, ciudad, tipo)
+            if genero_especifico:
+                genero = genero_especifico
+
         # 4. Formatear y guardar los resultados
         email = email.strip() if (email and isinstance(email, str)) else None
         telefono = telefono.strip() if (telefono and isinstance(telefono, str)) else None
@@ -445,6 +611,11 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
                 f"Instagram: {instagram or 'N/A'}. "
                 f"Web: {web or 'N/A'}."
             ).strip()
+
+            # Datos de confianza insuficiente: se anotan para revisión humana, NO se escriben
+            # en los campos verificados de la Sheet.
+            if sugerencias_totales:
+                nuevas_notas += " | A verificar (baja confianza): " + "; ".join(sugerencias_totales)
             
             datos_actualizar = {
                 "notas": nuevas_notas

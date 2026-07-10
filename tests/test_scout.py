@@ -1,3 +1,4 @@
+import json
 import pytest
 from agents.scout import enriquecer_leads_sin_contacto
 
@@ -68,6 +69,64 @@ def test_scout_enriquecimiento(mocker, mock_db):
     assert "Instagram: @salakarma" in lead_003["notas"]
     assert lead_003["aforo"] == 250
     assert lead_003["tipo"] == "sala"
+
+def test_procesar_campos_extraidos():
+    """
+    El helper anti-alucinación: solo los datos de confianza 'alta' se aceptan; los de
+    confianza media/baja se devuelven como sugerencias y los nulos se descartan.
+    """
+    from agents.scout import _procesar_campos_extraidos
+
+    data = {
+        "email": {"valor": "a@b.com", "confianza": "alta", "fuente": "[1]"},
+        "telefono": {"valor": "123", "confianza": "media", "fuente": "[2]"},
+        "instagram": "@plano",  # valor plano (retrocompatibilidad) → se asume fiable
+        "website": {"valor": "null", "confianza": "alta", "fuente": None},  # null textual → descartado
+    }
+    aceptados, sugerencias = _procesar_campos_extraidos(
+        data, ["email", "telefono", "instagram", "website"]
+    )
+
+    assert aceptados == {"email": "a@b.com", "instagram": "@plano"}
+    assert "website" not in aceptados
+    assert any("telefono" in s for s in sugerencias)
+
+
+def test_scout_extraccion_confianza(mocker):
+    """
+    Verifica que extraer_datos_contacto_de_snippets, sobre una respuesta JSON con distintos
+    niveles de confianza, escriba SOLO los datos de confianza alta y deje el resto como
+    sugerencias a verificar (regla anti-alucinación).
+    """
+    from agents.scout import extraer_datos_contacto_de_snippets
+
+    respuesta_json = json.dumps({
+        "email": {"valor": "info@sala.com", "confianza": "alta", "fuente": "[1]"},
+        "telefono": {"valor": "986111222", "confianza": "baja", "fuente": None},
+        "instagram": {"valor": None, "confianza": "baja", "fuente": None},
+        "website": {"valor": "https://sala.com", "confianza": "media", "fuente": "[2]"},
+        "genero": {"valor": "Rock / Indie", "confianza": "alta", "fuente": "[1]"},
+    })
+    # Sobrescribe el mock autouse de conftest para esta llamada concreta.
+    mocker.patch("agents.scout.gemini_client.generar_texto_gemini", return_value=respuesta_json)
+
+    datos = extraer_datos_contacto_de_snippets(
+        "Sala X", "Vigo", [{"title": "t", "href": "h", "body": "b"}], tipo="sala"
+    )
+
+    # Confianza alta → se aceptan como datos verificados
+    assert datos["email"] == "info@sala.com"
+    assert datos["genero"] == "Rock / Indie"
+    # Confianza media/baja → NO se escriben
+    assert "telefono" not in datos
+    assert "website" not in datos
+    assert "instagram" not in datos
+    # Los de confianza insuficiente (no nulos) quedan como sugerencias
+    sugerencias = " ".join(datos.get("_sugerencias", []))
+    assert "telefono" in sugerencias
+    assert "website" in sugerencias
+    assert "instagram" not in sugerencias  # el valor null no genera sugerencia
+
 
 def test_scout_inferir_tipo():
     from agents.scout import inferir_tipo_lead

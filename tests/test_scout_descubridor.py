@@ -29,8 +29,8 @@ def test_descubrir_y_añadir_leads(mocker, mock_db):
     
     # Mockear la IA de Gemini para devolver candidatos estructurados
     mocker.patch("agents.scout_descubridor.extraer_candidatos_con_ia", return_value=[
-        {"nombre": "Ayuntamiento de Vigo", "ciudad": "Vigo"},
-        {"nombre": "Sala El Sol", "ciudad": "Madrid"} # Duplicado de lead_001
+        {"nombre": "Ayuntamiento de Vigo", "ciudad": "Vigo", "fuente": "[1]"},
+        {"nombre": "Sala El Sol", "ciudad": "Madrid", "fuente": "[2]"} # Duplicado de lead_001
     ])
     
     # Ejecutar el descubridor de ayuntamientos en Pontevedra
@@ -45,6 +45,7 @@ def test_descubrir_y_añadir_leads(mocker, mock_db):
     assert nuevo_lead["tipo"] == "ayuntamiento"
     assert nuevo_lead["estado"] == "nuevo"
     assert nuevo_lead["ciudad"] == "Vigo"
-    assert nuevo_lead["region"] == "Pontevedra"
+    assert nuevo_lead["region"] == "España"  # En la Sheet, la región representa el país (España)
     assert nuevo_lead["fuente"] == "Scout Descubridor: Pontevedra"
     assert "Descubierto automáticamente" in nuevo_lead["notas"]
+    assert "SIN verificar" in nuevo_lead["notas"]

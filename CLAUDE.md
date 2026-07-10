@@ -46,8 +46,13 @@ extracción con IA + verificación). No lo ataques primero.
 - **Lenguaje:** Python 3.11+
 - **Datos:** Google Sheets vía `gspread` (service account, no OAuth de usuario para esto)
 - **Email:** Gmail API con OAuth — reutilizar patrón de `larra_sync.py` si Diego lo aporta al repo
-- **IA:** Claude API — Sonnet para `redactor.py` (calidad de tono importa), Haiku para
-  `lector_bandeja.py` (clasificación simple, volumen, coste bajo)
+- **IA (estrategia híbrida):** Gemini Flash (`gemini-2.5-flash`, vía `lib/gemini_client.py`) para
+  las tareas de volumen y bajo coste — `scout.py`, `scout_descubridor.py` y `lector_bandeja.py`.
+  Claude (vía `lib/claude_client.py`) para donde la calidad de redacción vende el bolo:
+  **Sonnet en `redactor.py`** (calidad de tono). *Estado real: el redactor todavía usa Gemini;
+  migrarlo a Sonnet está pendiente.* Toda extracción de datos usa salida estructurada (JSON mode,
+  `forzar_json=True`) para robustez. Nota: `google-generativeai` está deprecado por Google
+  (recomiendan `google-genai`) — funciona, pero es deuda técnica a migrar.
 - **Notificaciones:** Telegram Bot API
 - **Scheduler:** GitHub Actions (cron), no Celery/n8n/servidores propios
 - **Scraping puntual (Scout):** `requests` + `BeautifulSoup` para HTML simple, `playwright`
@@ -135,5 +140,11 @@ _(Actualizar esta sección a medida que avance)_
 - [x] `redactor.py` funcionando con EPK real y adaptado a Salas, Festivales y Ayuntamientos
 - [ ] `enviador.py` + Gmail OAuth funcionando
 - [x] `scout.py` — versión semilla manual + enriquecimiento adaptada a Salas, Festivales y Ayuntamientos
+- [x] Scout robustecido — salida estructurada (JSON mode) + anti-alucinación (confianza/fuente)
 - [ ] `lector_bandeja.py` funcionando
 - [ ] Primeras pruebas con salas reales
+
+> **Documentación:** el funcionamiento completo del sistema (arquitectura basada en estado,
+> ciclo de vida del lead, rol de cada agente) está explicado en `docs/como_funciona.md`.
+> Pendiente próxima sesión: migrar `redactor.py` a Claude Sonnet y arreglar el bug del `ASUNTO:`
+> en `enviador.py` (el asunto generado se ignora y acaba dentro del cuerpo del email).

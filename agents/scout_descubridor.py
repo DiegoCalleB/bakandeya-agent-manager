@@ -71,41 +71,42 @@ def extraer_candidatos_con_ia(resultados, tipo, region):
         f"2. Si el tipo es 'festival', extrae el nombre oficial del festival de música o ciclo de conciertos (ej: 'Festival PortAmérica', 'O Son do Camiño') y su localidad.\n"
         f"3. Si el tipo es 'sala', extrae el nombre de la sala de conciertos, pub de música en vivo o club y su localidad.\n"
         "4. Ignora directorios genéricos, agencias, turoperadores o noticias. Solo extrae entidades reales.\n"
-        "5. Devuelve estrictamente un objeto JSON con el siguiente formato exacto, sin bloques de código, sin markdown ni explicaciones:\n"
+        "5. GROUNDING: no inventes entidades. Extrae SOLO las que aparezcan explícitamente en los\n"
+        "   snippets de arriba. Para cada candidato, 'fuente' debe ser el índice del snippet que lo\n"
+        "   respalda (ej: '[3]'). Si no puedes señalar un snippet concreto, NO incluyas ese candidato.\n"
+        "6. Devuelve un objeto JSON con este esquema exacto:\n"
         "{\n"
         "  \"candidatos\": [\n"
         "    {\n"
         "      \"nombre\": \"Nombre oficial de la entidad\",\n"
-        "      \"ciudad\": \"Localidad/Municipio\"\n"
+        "      \"ciudad\": \"Localidad/Municipio\",\n"
+        "      \"fuente\": \"[n]\"\n"
         "    }\n"
         "  ]\n"
         "}"
     )
-    
+
     system_prompt = (
         "Eres un extractor experto de entidades geográficas y culturales a partir de textos de búsqueda. "
-        "Tu única salida posible debe ser un objeto JSON válido según el esquema solicitado."
+        "Tu única salida posible debe ser un objeto JSON válido según el esquema solicitado. "
+        "No inventes entidades: si no está en los snippets, no existe para ti."
     )
-    
-    try:
-        ans = gemini_client.generar_texto_gemini(
-            prompt=prompt,
-            model_name="gemini-2.5-flash",
-            system_instruction=system_prompt,
-            temperature=0.1
-        )
-        if ans:
-            ans_clean = ans.strip()
-            if ans_clean.startswith("```json"):
-                ans_clean = ans_clean.split("```json")[1].split("```")[0].strip()
-            elif ans_clean.startswith("```"):
-                ans_clean = ans_clean.split("```")[1].split("```")[0].strip()
-            
-            data = json.loads(ans_clean)
-            return data.get("candidatos", [])
+
+    ans = gemini_client.generar_texto_gemini(
+        prompt=prompt,
+        model_name="gemini-2.5-flash",
+        system_instruction=system_prompt,
+        temperature=0.1,
+        forzar_json=True  # JSON mode: respuesta siempre JSON válido, sin fences.
+    )
+    if not ans:
         return []
+
+    try:
+        data = json.loads(ans)
+        return data.get("candidatos", [])
     except Exception as e:
-        print(f"[scout_descubridor.py] Error al extraer candidatos con IA: {e}. Respuesta: {ans if 'ans' in locals() else 'None'}")
+        print(f"[scout_descubridor.py] Error al parsear JSON de Gemini: {e}. Respuesta: {ans}")
         return []
 
 def descubrir_y_añadir_leads(region, tipo, limite=10):
@@ -147,27 +148,32 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
     for cand in candidatos:
         nombre = cand.get("nombre")
         ciudad = cand.get("ciudad") or region
-        
+        fuente_snippet = cand.get("fuente")
+
         if not nombre:
             continue
-            
+
         nombre_norm = normalizar_nombre(nombre)
         if nombre_norm in nombres_existentes_normalizados:
             print(f"[scout_descubridor.py] Ignorando '{nombre}' (Ya existe en la base de datos).")
             continue
-            
+
         # Generar ID de 8 caracteres único para no colisionar
         lead_id = f"lead_{uuid.uuid4().hex[:5]}"
-        
+
         nuevo_lead = {
             "id": lead_id,
             "nombre_sala": nombre,
-            "ciudad": ciudad,
-            "region": region,
+            "ciudad": ciudad or region,
+            "region": "España",  # En la Sheet, la columna 'region' almacena el país (España)
             "tipo": tipo,
             "fuente": f"Scout Descubridor: {region}",
             "estado": "nuevo",
-            "notas": f"Descubierto automáticamente por el agente Scout Descubridor."
+            "notas": (
+                "Descubierto automáticamente por el agente Scout Descubridor"
+                + (f" (snippet {fuente_snippet})." if fuente_snippet else ".")
+                + " Contacto SIN verificar: pendiente de enriquecer por el Scout."
+            ),
         }
         
         leads_a_crear.append(nuevo_lead)

@@ -1,0 +1,43 @@
+name: Lector de Bandeja
+
+on:
+  schedule:
+    - cron: "0 */2 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  lector_bandeja:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Escribir credenciales de la cuenta de servicio de Google
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: echo "$GOOGLE_SERVICE_ACCOUNT_JSON" > credentials_service_account.json
+
+      - name: Ejecutar agente Lector de Bandeja
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: credentials_service_account.json
+          GOOGLE_SHEETS_DOCUMENT: "Bakandeya Leads"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Igual que en enviador.yml: sin OAuth real de Gmail en CI, se queda en modo
+          # simulado (lee drafts/respuestas_simuladas.json, que no existe en el runner
+          # -> no clasifica nada real todavía, pero no rompe el workflow).
+          EMAIL_MODE: simulado
+        run: python agents/lector_bandeja.py

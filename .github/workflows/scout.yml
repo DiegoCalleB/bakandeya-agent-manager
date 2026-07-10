@@ -1,0 +1,48 @@
+name: Scout
+
+on:
+  schedule:
+    # 06:00 hora de Madrid en horario de verano (CEST, UTC+2) -> 04:00 UTC.
+    # En horario de invierno (CET, UTC+1) se ejecutará realmente a las 05:00 local.
+    # Aproximación aceptable para un MVP de un solo desarrollador: no vale la pena
+    # complicar el cron para compensar el cambio de hora dos veces al año.
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Número máximo de leads a enriquecer en esta ejecución"
+        required: false
+        default: "15"
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Escribir credenciales de la cuenta de servicio de Google
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: echo "$GOOGLE_SERVICE_ACCOUNT_JSON" > credentials_service_account.json
+
+      - name: Ejecutar agente Scout
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: credentials_service_account.json
+          GOOGLE_SHEETS_DOCUMENT: "Bakandeya Leads"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python agents/scout.py --limit "${{ github.event.inputs.limit || '15' }}"

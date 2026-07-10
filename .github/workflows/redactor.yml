@@ -1,0 +1,44 @@
+name: Redactor
+
+on:
+  schedule:
+    # 09:00 hora de Madrid en horario de verano (CEST, UTC+2) -> 07:00 UTC.
+    # En invierno (CET, UTC+1) se ejecutará a las 08:00 local. Ver nota en scout.yml.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Número máximo de leads a redactar en esta ejecución"
+        required: false
+        default: "15"
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  redactor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Escribir credenciales de la cuenta de servicio de Google
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: echo "$GOOGLE_SERVICE_ACCOUNT_JSON" > credentials_service_account.json
+
+      - name: Ejecutar agente Redactor
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: credentials_service_account.json
+          GOOGLE_SHEETS_DOCUMENT: "Bakandeya Leads"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python agents/redactor.py --limit "${{ github.event.inputs.limit || '15' }}"

@@ -1,0 +1,47 @@
+name: Enviador
+
+on:
+  schedule:
+    # 09:30 hora de Madrid en horario de verano (CEST, UTC+2) -> 07:30 UTC.
+    # En invierno (CET, UTC+1) se ejecutará a las 08:30 local. Ver nota en scout.yml.
+    - cron: "30 7 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  enviador:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Escribir credenciales de la cuenta de servicio de Google
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: echo "$GOOGLE_SERVICE_ACCOUNT_JSON" > credentials_service_account.json
+
+      - name: Ejecutar agente Enviador
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: credentials_service_account.json
+          GOOGLE_SHEETS_DOCUMENT: "Bakandeya Leads"
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Forzado a modo simulado a propósito: aún no hay OAuth real de Gmail configurado
+          # en CI (requeriría subir un token.json como secreto). En este modo el borrador se
+          # guarda como HTML dentro del runner y se pierde al terminar el job -- no rompe el
+          # pipeline, pero de momento este workflow no deja rastro persistente del borrador.
+          # Cuando el flujo real de Gmail esté probado, quitar esta línea y añadir el secreto
+          # con token.json.
+          EMAIL_MODE: simulado
+        run: python agents/enviador.py

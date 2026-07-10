@@ -135,6 +135,14 @@ def mock_gmail_api(mocker, emails_enviados):
         })
         return {"id": f"msg_mock_{len(emails_enviados)}"}
 
+    def mock_crear_borrador(destinatario, asunto, cuerpo_texto):
+        emails_enviados.append({
+            "destinatario": destinatario,
+            "asunto": asunto,
+            "cuerpo": cuerpo_texto
+        })
+        return {"id": f"draft_mock_{len(emails_enviados)}"}
+
     def mock_leer_respuestas(query="is:unread"):
         return [
             {
@@ -147,6 +155,7 @@ def mock_gmail_api(mocker, emails_enviados):
         ]
 
     mocker.patch("lib.gmail_client.enviar_email", side_effect=mock_enviar_email)
+    mocker.patch("lib.gmail_client.crear_borrador", side_effect=mock_crear_borrador)
     mocker.patch("lib.gmail_client.leer_respuestas", side_effect=mock_leer_respuestas)
     mocker.patch("lib.gmail_client.obtener_servicio_gmail", return_value=None)
     

@@ -19,13 +19,18 @@ def cargar_epk():
         print(f"[redactor.py] Error al cargar el EPK: {e}")
         return {}
 
-def procesar_nuevos_leads():
+def procesar_nuevos_leads(limite_leads=9999, lead_id_especifico=None):
     """
     Busca leads en estado 'nuevo'. Si tienen email, les genera un pitch 
-    usando Claude y la información del EPK, y actualiza su estado a 'pendiente_aprobacion'.
+    usando Gemini y la información del EPK, y actualiza su estado a 'pendiente_aprobacion'.
     """
     print("[redactor.py] Iniciando procesamiento de nuevos leads...")
     leads = sheets.obtener_leads(estado="nuevo")
+    
+    if lead_id_especifico:
+        leads = [l for l in leads if l.get("id") == lead_id_especifico]
+        print(f"[redactor.py] Filtrando por ID de lead específico: '{lead_id_especifico}'. Encontrados: {len(leads)}")
+        
     epk = cargar_epk()
     
     if not epk:
@@ -33,8 +38,10 @@ def procesar_nuevos_leads():
         return 0
         
     procesados = 0
+    leads_a_procesar = [l for l in leads if l.get("email_contacto")]
+    leads_a_procesar = leads_a_procesar[:limite_leads]
     
-    for lead in leads:
+    for lead in leads_a_procesar:
         lead_id = lead.get("id")
         email = lead.get("email_contacto")
         nombre_sala = lead.get("nombre_sala")
@@ -134,4 +141,10 @@ def procesar_nuevos_leads():
     return procesados
 
 if __name__ == "__main__":
-    procesar_nuevos_leads()
+    import argparse
+    parser = argparse.ArgumentParser(description="Agente Redactor para generar pitches de leads.")
+    parser.add_argument("--limit", type=int, default=3, help="Límite de leads a redactar.")
+    parser.add_argument("--id", type=str, default=None, help="ID de un lead específico a redactar.")
+    args = parser.parse_args()
+    
+    procesar_nuevos_leads(limite_leads=args.limit, lead_id_especifico=args.id)

@@ -6,10 +6,11 @@ from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-# Scopes requeridos para leer y enviar emails
+# Scopes requeridos para leer, enviar y crear borradores
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.send',
-    'https://www.googleapis.com/auth/gmail.readonly'
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.compose'
 ]
 
 def obtener_servicio_gmail():
@@ -61,6 +62,27 @@ def enviar_email(destinatario, asunto, cuerpo_texto):
         return envio
     except Exception as e:
         print(f"Error al enviar el email a {destinatario}: {e}")
+        return None
+
+def crear_borrador(destinatario, asunto, cuerpo_texto):
+    """
+    Crea un borrador (draft) en Gmail en lugar de enviarlo directamente.
+    """
+    try:
+        service = obtener_servicio_gmail()
+        mensaje = MIMEText(cuerpo_texto)
+        mensaje['to'] = destinatario
+        mensaje['subject'] = asunto
+        
+        # Codificar el mensaje en base64url
+        raw_message = base64.urlsafe_b64encode(mensaje.as_bytes()).decode('utf-8')
+        body = {'message': {'raw': raw_message}}
+        
+        borrador = service.users().drafts().create(userId='me', body=body).execute()
+        print(f"Borrador creado con éxito. ID: {borrador['id']}")
+        return borrador
+    except Exception as e:
+        print(f"Error al crear el borrador para {destinatario}: {e}")
         return None
 
 def leer_respuestas(query="is:unread"):

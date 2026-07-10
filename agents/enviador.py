@@ -9,10 +9,10 @@ import lib.telegram as telegram
 
 def enviar_leads_aprobados():
     """
-    Busca leads en estado 'aprobado'. Envía el email con el pitch generado 
+    Busca leads en estado 'aprobado'. Crea un borrador en Gmail con el pitch generado 
     y cambia el estado a 'esperando_respuesta'. Notifica por Telegram.
     """
-    print("[enviador.py] Iniciando envío de leads aprobados...")
+    print("[enviador.py] Iniciando creación de borradores para leads aprobados...")
     leads = sheets.obtener_leads(estado="aprobado")
     enviados = 0
     
@@ -27,15 +27,15 @@ def enviar_leads_aprobados():
             continue
             
         asunto = f"Propuesta de concierto: Bakandeya en {nombre_sala}"
-        print(f"[enviador.py] Enviando propuesta a {email}...")
+        print(f"[enviador.py] Creando borrador en Gmail para {email}...")
         
-        res = gmail_client.enviar_email(email, asunto, pitch)
+        res = gmail_client.crear_borrador(email, asunto, pitch)
         if res:
             sheets.actualizar_estado_lead(lead_id, "esperando_respuesta")
-            telegram.enviar_notificacion_telegram(f"📧 Email enviado a *{nombre_sala}* ({email})")
+            telegram.enviar_notificacion_telegram(f"📝 Borrador de email creado para *{nombre_sala}* ({email})")
             enviados += 1
             
-    print(f"[enviador.py] Envíos finalizados. Total emails enviados: {enviados}")
+    print(f"[enviador.py] Creación de borradores finalizada. Total borradores creados: {enviados}")
     return enviados
 
 if __name__ == "__main__":

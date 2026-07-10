@@ -22,7 +22,7 @@ def test_descubrir_y_añadir_leads(mocker, mock_db):
     assert len(mock_db) == 3
     
     # Mockear búsqueda en DuckDuckGo
-    mocker.patch("agents.scout_descubridor.obtener_resultados_busqueda", return_value=[
+    mocker.patch("agents.scout_descubridor.buscar_duckduckgo", return_value=[
         {"title": "Ayuntamiento de Vigo", "href": "https://vigo.org", "body": "Ayuntamiento de Vigo contacto y concejalías."},
         {"title": "Sala El Sol Madrid", "href": "https://salaelsol.com", "body": "Sala El Sol conciertos en Madrid."}
     ])

@@ -19,7 +19,7 @@ def test_scout_enriquecimiento(mocker, mock_db):
     lead_001["instagram"] = "@salaelsol"
     
     # Mockear la búsqueda y extracción por snippets
-    mocker.patch("agents.scout.obtener_resultados_busqueda", return_value=[
+    mocker.patch("agents.scout.buscar_duckduckgo", return_value=[
         {"title": "Sala Karma Pontevedra", "href": "https://salakarma.es", "body": "Contacto info@salakarma.es +34 986 112233"}
     ])
     
@@ -69,6 +69,34 @@ def test_scout_enriquecimiento(mocker, mock_db):
     assert "Instagram: @salakarma" in lead_003["notas"]
     assert lead_003["aforo"] == 250
     assert lead_003["tipo"] == "sala"
+
+def test_scout_mueve_a_sin_contacto_sin_email(mocker, mock_db):
+    """
+    Coordinación de estados: un lead 'nuevo' que tras búsqueda exhaustiva no consigue email
+    debe salir de 'nuevo' a 'sin_contacto' (terminal), no quedarse atascado reintentándose.
+    """
+    import lib.estados as estados
+    from agents.scout import enriquecer_leads_sin_contacto
+
+    # Completar lead_001 para que el scout procese solo lead_003 (Sala Karma, sin email).
+    lead_001 = next(l for l in mock_db if l["id"] == "lead_001")
+    lead_001["telefono"] = "913 65 24 15"
+    lead_001["website"] = "https://salaelsol.com"
+    lead_001["instagram"] = "@salaelsol"
+    lead_003 = next(l for l in mock_db if l["id"] == "lead_003")
+    assert lead_003["estado"] == estados.NUEVO
+
+    # Búsqueda devuelve algo, pero la IA no extrae ningún dato de contacto.
+    mocker.patch("agents.scout.buscar_duckduckgo", return_value=[
+        {"title": "t", "href": "https://x.es", "body": "b"}
+    ])
+    mocker.patch("agents.scout.extraer_datos_contacto_de_snippets", return_value={})
+    mocker.patch("agents.scout.descargar_texto_pagina", return_value=("", []))
+
+    enriquecer_leads_sin_contacto(limite_leads=1)
+
+    assert lead_003["estado"] == estados.SIN_CONTACTO
+
 
 def test_procesar_campos_extraidos():
     """

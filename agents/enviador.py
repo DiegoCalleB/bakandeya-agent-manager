@@ -6,6 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import lib.sheets as sheets
 import lib.gmail_client as gmail_client
 import lib.telegram as telegram
+import lib.estados as estados
 
 
 def parsear_pitch(pitch, nombre_sala):
@@ -42,7 +43,7 @@ def enviar_leads_aprobados():
     y cambia el estado a 'esperando_respuesta'. Notifica por Telegram.
     """
     print("[enviador.py] Iniciando creación de borradores para leads aprobados...")
-    leads = sheets.obtener_leads(estado="aprobado")
+    leads = sheets.obtener_leads(estado=estados.APROBADO)
     enviados = 0
     
     for lead in leads:
@@ -60,7 +61,7 @@ def enviar_leads_aprobados():
 
         res = gmail_client.crear_borrador(email, asunto, cuerpo)
         if res:
-            sheets.actualizar_estado_lead(lead_id, "esperando_respuesta")
+            estados.transicionar(lead, estados.ESPERANDO)
             telegram.enviar_notificacion_telegram(f"📝 Borrador de email creado para *{nombre_sala}* ({email})")
             enviados += 1
             

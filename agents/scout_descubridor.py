@@ -13,6 +13,8 @@ load_dotenv()
 
 import lib.sheets as sheets
 import lib.gemini_client as gemini_client
+import lib.estados as estados
+from lib.busqueda import buscar_duckduckgo, formatear_snippets
 
 def normalizar_nombre(texto):
     """
@@ -39,29 +41,15 @@ def normalizar_nombre(texto):
             
     return texto.replace(" ", "").replace("-", "").replace("_", "").strip()
 
-def obtener_resultados_busqueda(query, max_results=8):
-    """
-    Realiza una búsqueda en DuckDuckGo y devuelve la lista de resultados usando la librería ddgs.
-    """
-    from ddgs import DDGS
-    try:
-        with DDGS() as ddgs:
-            return list(ddgs.text(query, max_results=max_results))
-    except Exception as e:
-        print(f"[scout_descubridor.py] Error al buscar '{query}': {e}")
-        return []
-
 def extraer_candidatos_con_ia(resultados, tipo, region):
     """
     Utiliza Gemini para analizar snippets de búsqueda y extraer nombres de candidatos estructurados.
     """
     if not resultados:
         return []
-        
-    res_str = ""
-    for idx, r in enumerate(resultados, 1):
-        res_str += f"[{idx}] Título: {r.get('title')}\n    URL: {r.get('href')}\n    Snippet: {r.get('body')}\n\n"
-        
+
+    res_str = formatear_snippets(resultados)
+
     prompt = (
         f"Analiza los siguientes resultados de búsqueda web para encontrar nombres de {tipo}s en la región/provincia '{region}':\n\n"
         f"{res_str}\n"
@@ -125,7 +113,7 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
         query = f"salas de conciertos locales de musica en vivo {region}"
         
     print(f"[scout_descubridor.py] Buscando en DuckDuckGo con query: '{query}'...")
-    resultados = obtener_resultados_busqueda(query, max_results=10)
+    resultados = buscar_duckduckgo(query, max_results=10)
     
     if not resultados:
         print("[scout_descubridor.py] No se obtuvieron resultados de búsqueda. Abortando.")
@@ -168,7 +156,7 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
             "region": "España",  # En la Sheet, la columna 'region' almacena el país (España)
             "tipo": tipo,
             "fuente": f"Scout Descubridor: {region}",
-            "estado": "nuevo",
+            "estado": estados.NUEVO,
             "notas": (
                 "Descubierto automáticamente por el agente Scout Descubridor"
                 + (f" (snippet {fuente_snippet})." if fuente_snippet else ".")

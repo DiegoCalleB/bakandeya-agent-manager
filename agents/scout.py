@@ -15,6 +15,8 @@ load_dotenv()
 
 import lib.sheets as sheets
 import lib.gemini_client as gemini_client
+import lib.estados as estados
+from lib.busqueda import buscar_duckduckgo, formatear_snippets
 
 # Ranking de niveles de confianza. La IA etiqueta cada dato extraído con uno de estos
 # niveles; solo escribimos en la Sheet los que superan su umbral. Los demás se anotan como
@@ -118,9 +120,7 @@ def seleccionar_web_oficial_con_ia(nombre_sala, ciudad, resultados):
     únicamente el enlace que sea la web oficial de la sala/festival o ayuntamiento.
     Ignora blogs, guías turísticas (como EuroCheapo, TripAdvisor), directorios o noticias de prensa.
     """
-    res_str = ""
-    for idx, r in enumerate(resultados, 1):
-        res_str += f"[{idx}] Título: {r.get('title')}\n    URL: {r.get('href')}\n    Snippet: {r.get('body')}\n\n"
+    res_str = formatear_snippets(resultados)
         
     prompt = (
         f"Analiza los siguientes resultados de búsqueda en la web para encontrar la web oficial de la sala o festival '{nombre_sala}' en '{ciudad}':\n\n"
@@ -148,18 +148,6 @@ def seleccionar_web_oficial_con_ia(nombre_sala, ciudad, resultados):
         print(f"[scout.py] Error al seleccionar web oficial con IA: {e}")
         return None
 
-def obtener_resultados_busqueda(query, max_results=8):
-    """
-    Realiza una búsqueda en DuckDuckGo y devuelve la lista de resultados usando la librería ddgs.
-    """
-    from ddgs import DDGS
-    try:
-        with DDGS() as ddgs:
-            return list(ddgs.text(query, max_results=max_results))
-    except Exception as e:
-        print(f"[scout.py] Error al buscar '{query}': {e}")
-        return []
-
 def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sala"):
     """
     Analiza los títulos y snippets de DuckDuckGo usando Gemini para extraer de forma directa
@@ -168,9 +156,7 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
     if not resultados:
         return {}
         
-    res_str = ""
-    for idx, r in enumerate(resultados, 1):
-        res_str += f"[{idx}] Título: {r.get('title')}\n    URL: {r.get('href')}\n    Snippet: {r.get('body')}\n\n"
+    res_str = formatear_snippets(resultados)
         
     if tipo == "ayuntamiento":
         objetivo_contacto = (
@@ -249,7 +235,7 @@ def buscar_web_sala(nombre_sala, ciudad):
     """
     Busca en DuckDuckGo la web oficial de la sala y devuelve el primer resultado relevante usando la librería ddgs.
     """
-    results = obtener_resultados_busqueda(f"{nombre_sala} {ciudad} web oficial contacto", max_results=5)
+    results = buscar_duckduckgo(f"{nombre_sala} {ciudad} web oficial contacto", max_results=5)
     if not results:
         return None
         
@@ -382,7 +368,7 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
     (falta de email, teléfono, website o instagram) y los enriquece de forma exhaustiva.
     """
     print("[scout.py] Iniciando proceso de enriquecimiento de leads...")
-    leads = sheets.obtener_leads(estado="nuevo")
+    leads = sheets.obtener_leads(estado=estados.NUEVO)
     
     if region:
         leads = [l for l in leads if (l.get("region") and region.lower() in str(l.get("region")).lower()) or (l.get("ciudad") and region.lower() in str(l.get("ciudad")).lower())]
@@ -441,7 +427,7 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
         else:
             query_busqueda = f"{nombre_sala} {ciudad} web oficial contacto email telefono aforo"
 
-        results = obtener_resultados_busqueda(query_busqueda, max_results=8)
+        results = buscar_duckduckgo(query_busqueda, max_results=8)
         datos_snippets = extraer_datos_contacto_de_snippets(nombre_sala, ciudad, results, tipo=tipo)
         sugerencias_totales.extend(datos_snippets.get("_sugerencias") or [])
         _combinar(datos, datos_snippets, CAMPOS)
@@ -487,7 +473,7 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
             else:
                 query_fallback = f"{nombre_sala} {ciudad} contacto email correo telefono"
 
-            results_fallback = obtener_resultados_busqueda(query_fallback, max_results=8)
+            results_fallback = buscar_duckduckgo(query_fallback, max_results=8)
             if results_fallback:
                 datos_fallback = extraer_datos_contacto_de_snippets(nombre_sala, ciudad, results_fallback, tipo=tipo)
                 sugerencias_totales.extend(datos_fallback.get("_sugerencias") or [])
@@ -550,19 +536,26 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
             res = sheets.actualizar_datos_lead(lead_id, datos_actualizar)
             if res:
                 enriquecidos += 1
+
+            # Coordinación de estados: si tras enriquecer sigue SIN email, el redactor no puede
+            # trabajar el lead. Lo sacamos de 'nuevo' a 'sin_contacto' para que no se reintente
+            # en cada ejecución del cron. (El teléfono/web encontrados se conservan.)
+            email_final = lead.get("email_contacto") or email
+            if not email_final:
+                estados.transicionar(lead, estados.SIN_CONTACTO)
         else:
             print(f"[scout.py] [ERROR] No se logró extraer ningún dato de contacto para '{nombre_sala}'.")
             notas_previas = lead.get("notas") or ""
-            
-            datos_actualizar = {
-                "estado": "nuevo",
-                "notas": f"{notas_previas} | Scout: Búsqueda exhaustiva sin resultados de contacto."
-            }
+
             # Guardar el tipo inferido/detectado aunque falle el enriquecimiento
             if not lead.get("tipo"):
-                datos_actualizar["tipo"] = tipo
-                
-            sheets.actualizar_datos_lead(lead_id, datos_actualizar)
+                sheets.actualizar_datos_lead(lead_id, {"tipo": tipo})
+
+            # Sin ningún contacto: a 'sin_contacto' (terminal), fuera del bucle de reintentos.
+            estados.transicionar(
+                lead, estados.SIN_CONTACTO,
+                notas=f"{notas_previas} | Scout: búsqueda exhaustiva sin resultados de contacto.",
+            )
             
         # Respetar rate limits
         delay = random.uniform(3, 5)

@@ -6,6 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import json
 import lib.sheets as sheets
 import lib.gemini_client as gemini_client
+import lib.estados as estados
 
 def cargar_epk():
     """
@@ -25,7 +26,7 @@ def procesar_nuevos_leads(limite_leads=9999, lead_id_especifico=None):
     usando Gemini y la información del EPK, y actualiza su estado a 'pendiente_aprobacion'.
     """
     print("[redactor.py] Iniciando procesamiento de nuevos leads...")
-    leads = sheets.obtener_leads(estado="nuevo")
+    leads = sheets.obtener_leads(estado=estados.NUEVO)
     
     if lead_id_especifico:
         leads = [l for l in leads if l.get("id") == lead_id_especifico]
@@ -134,7 +135,7 @@ def procesar_nuevos_leads(limite_leads=9999, lead_id_especifico=None):
             temperature=0.7
         )
         if pitch:
-            sheets.actualizar_estado_lead(lead_id, "pendiente_aprobacion", pitch=pitch)
+            estados.transicionar(lead, estados.PENDIENTE, pitch=pitch)
             procesados += 1
             
     print(f"[redactor.py] Procesamiento finalizado. Leads redactados y listos para aprobación: {procesados}")

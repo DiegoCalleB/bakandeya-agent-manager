@@ -7,6 +7,7 @@ import lib.sheets as sheets
 import lib.gmail_client as gmail_client
 import lib.gemini_client as gemini_client
 import lib.telegram as telegram
+import lib.estados as estados
 
 def procesar_bandeja_entrada():
     """
@@ -15,7 +16,7 @@ def procesar_bandeja_entrada():
     """
     print("[lector_bandeja.py] Iniciando lectura de respuestas...")
     respuestas = gmail_client.leer_respuestas()
-    leads_esperando = sheets.obtener_leads(estado="esperando_respuesta")
+    leads_esperando = sheets.obtener_leads(estado=estados.ESPERANDO)
     
     if not respuestas:
         print("[lector_bandeja.py] No hay nuevas respuestas en la bandeja.")
@@ -80,7 +81,7 @@ def procesar_bandeja_entrada():
             extracto_respuesta = cuerpo[:200].replace("\n", " ")
             notas = f"Respuesta recibida ({respuesta.get('fecha')}): {extracto_respuesta}..."
             
-            sheets.actualizar_estado_lead(lead_id, categoria, notas=notas)
+            estados.transicionar(lead_asociado, categoria, notas=notas)
             telegram.enviar_notificacion_telegram(
                 f"🔔 Respuesta de *{nombre_sala}* clasificada como *{categoria.upper()}*\n"
                 f"📝 Resumen: {extracto_respuesta}..."

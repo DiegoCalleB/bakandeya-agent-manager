@@ -137,23 +137,19 @@ bakandeya-agent-manager/
 _(Actualizar esta sección a medida que avance)_
 
 - [ ] Fase 0 — Contactos, playbook y EPK de Filgue volcados
-- [x] `redactor.py` funcionando con EPK real y adaptado a Salas, Festivales y Ayuntamientos
+- [x] `redactor.py` funcionando con EPK real y adaptado a Salas, Festivales y Ayuntamientos con variedad y traducción automática
 - [x] Bug del `ASUNTO:` en `enviador.py` arreglado (el asunto generado ya no se cuela en el cuerpo)
-- [ ] `enviador.py` + Gmail OAuth real probado (de momento corre en modo simulado: borradores HTML
-  locales en `drafts/`, sin `credentials.json`/`token.json`)
+- [x] `enviador.py` + Gmail OAuth real funcionando y probado (se generó `token.json` y crea borradores en Gmail de verdad)
 - [x] `scout.py` — versión semilla manual + enriquecimiento adaptada a Salas, Festivales y Ayuntamientos
 - [x] Scout robustecido — salida estructurada (JSON mode) + anti-alucinación (confianza/fuente)
-- [x] `lector_bandeja.py` funcionando (clasifica con Gemini Flash, modo simulado con
-  `drafts/respuestas_simuladas.json`)
-- [x] Máquina de estados (`lib/estados.py`) con grafo de transiciones válidas
-- [x] Workflows de GitHub Actions (`scout.yml`, `redactor.yml`, `enviador.yml`,
-  `lector_bandeja.yml`) creados — corren en modo simulado (sin Gmail real en CI todavía);
-  faltan los secrets en el repo de GitHub para que se ejecuten de verdad
-- [ ] Primeras pruebas con salas reales
+- [x] `lector_bandeja.py` funcionando (clasifica con Gemini Flash)
+- [x] Máquina de estados (`lib/estados.py`) con grafo de transiciones válidas y soporte para regeneración de pitches
+- [x] Workflows de GitHub Actions configurados con los secretos del repositorio
+- [ ] Primeras pruebas con salas reales (envío de los primeros borradores aprobados)
 
 > **Documentación:** el funcionamiento completo del sistema (arquitectura basada en estado,
 > ciclo de vida del lead, rol de cada agente) está explicado en `docs/como_funciona.md`. Deuda
 > técnica conocida y priorizada en `docs/guia_mantenimiento.md` (sección 9).
-> Pendiente próxima sesión: configurar el flujo real de Gmail OAuth (`credentials.json` +
-> primera autorización) y añadir los secrets (`GOOGLE_SERVICE_ACCOUNT_JSON`, `GEMINI_API_KEY`,
-> `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`) al repo de GitHub para activar los workflows.
+>
+> **Siguiente paso:** Revisar los borradores generados en tu bandeja de Gmail, cambiar el estado
+> de las salas de tu interés a `aprobado` en la Google Sheet y ejecutar `enviador.py` en modo real.

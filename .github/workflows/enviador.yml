@@ -31,17 +31,20 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: echo "$GOOGLE_SERVICE_ACCOUNT_JSON" > credentials_service_account.json
 
+      - name: Escribir credenciales de cliente OAuth de Gmail
+        env:
+          GMAIL_CREDENTIALS_JSON: ${{ secrets.GMAIL_CREDENTIALS_JSON }}
+        run: echo "$GMAIL_CREDENTIALS_JSON" > credentials.json
+
+      - name: Escribir token de sesion de Gmail
+        env:
+          GMAIL_TOKEN_JSON: ${{ secrets.GMAIL_TOKEN_JSON }}
+        run: echo "$GMAIL_TOKEN_JSON" > token.json
+
       - name: Ejecutar agente Enviador
         env:
           GOOGLE_APPLICATION_CREDENTIALS: credentials_service_account.json
           GOOGLE_SHEETS_DOCUMENT: "Bakandeya Leads"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          # Forzado a modo simulado a propósito: aún no hay OAuth real de Gmail configurado
-          # en CI (requeriría subir un token.json como secreto). En este modo el borrador se
-          # guarda como HTML dentro del runner y se pierde al terminar el job -- no rompe el
-          # pipeline, pero de momento este workflow no deja rastro persistente del borrador.
-          # Cuando el flujo real de Gmail esté probado, quitar esta línea y añadir el secreto
-          # con token.json.
-          EMAIL_MODE: simulado
         run: python agents/enviador.py

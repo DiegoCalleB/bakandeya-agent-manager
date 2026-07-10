@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bakandeya Agent Manager — Diagramas</title>
+<style>
+  :root {
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --border:         rgba(11,11,11,0.10);
+    --shadow:         rgba(11,11,11,0.08);
+
+    /* Rama del mapa mental (paleta categórica, orden fijo: slots 1,5,2,3,8) */
+    --br-agentes:       #2a78d6;
+    --br-coordinacion:  #4a3aa7;
+    --br-infra:         #1baf7a;
+    --br-datos:         #eda100;
+    --br-calidad:       #eb6834;
+
+    /* Estados del pipeline (mismos slots categóricos, distinto contexto) */
+    --fs-nuevo:       #2a78d6;
+    --fs-sin-contacto:#eb6834;
+    --fs-pendiente:   #eda100;
+    --fs-aprobado:    #1baf7a;
+    --fs-esperando:   #4a3aa7;
+    --fs-neutral:     #898781;
+
+    /* Estatus (fijos, nunca se reutilizan como categóricos) */
+    --st-good:     #0ca30c;
+    --st-warning:  #fab219;
+    --st-critical: #d03b3b;
+  }
+
+  html[data-theme="dark"] {
+    --surface-1:      #1a1a19;
+    --page:           #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --border:         rgba(255,255,255,0.10);
+    --shadow:         rgba(0,0,0,0.35);
+
+    --br-agentes:       #3987e5;
+    --br-coordinacion:  #9085e9;
+    --br-infra:         #199e70;
+    --br-datos:         #c98500;
+    --br-calidad:       #d95926;
+
+    --fs-nuevo:       #3987e5;
+    --fs-sin-contacto:#d95926;
+    --fs-pendiente:   #c98500;
+    --fs-aprobado:    #199e70;
+    --fs-esperando:   #9085e9;
+    --fs-neutral:     #898781;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--text-primary);
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1360px; margin: 0 auto; padding: 32px 24px 80px; }
+
+  header.page-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 24px;
+    margin-bottom: 8px;
+  }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  .subtitle { color: var(--text-secondary); margin: 0; font-size: 0.95rem; }
+  .subtitle a { color: inherit; }
+
+  button#theme-toggle {
+    flex-shrink: 0;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  button#theme-toggle:hover { border-color: var(--text-secondary); }
+
+  section { margin-top: 44px; }
+  h2 { font-size: 1.2rem; margin: 0 0 4px; }
+  .section-note { color: var(--text-secondary); font-size: 0.9rem; margin: 0 0 18px; max-width: 780px; }
+
+  .panel {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 1px 3px var(--shadow);
+    overflow-x: auto;
+  }
+
+  /* ---------- Mapa mental ---------- */
+  #mindmap-canvas {
+    position: relative;
+    width: 1500px;
+    height: 980px;
+    margin: 0 auto;
+  }
+  #mindmap-lines { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  .mm-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    text-align: center;
+    white-space: nowrap;
+    background: var(--surface-1);
+    border: 1.5px solid var(--border);
+    color: var(--text-primary);
+    z-index: 2;
+  }
+  .mm-label { display: block; font-weight: 600; }
+  .mm-sub   { display: block; color: var(--text-secondary); font-weight: 400; font-size: 0.72rem; margin-top: 2px; }
+
+  .mm-center {
+    padding: 16px 22px;
+    font-size: 0.95rem;
+    border-radius: 14px;
+    border-width: 2px;
+    border-color: var(--text-primary);
+    font-weight: 700;
+  }
+  .mm-branch { border-width: 2.5px; font-size: 0.88rem; }
+  .mm-leaf   { font-size: 0.74rem; padding: 6px 11px; border-color: var(--gridline); }
+
+  .mm-branch.c-agentes      { border-color: var(--br-agentes); }
+  .mm-branch.c-coordinacion { border-color: var(--br-coordinacion); }
+  .mm-branch.c-infra        { border-color: var(--br-infra); }
+  .mm-branch.c-datos        { border-color: var(--br-datos); }
+  .mm-branch.c-calidad      { border-color: var(--br-calidad); }
+
+  .mm-leaf.dim { opacity: 0.6; border-style: dashed; }
+
+  /* ---------- Diagrama de flujo ---------- */
+  #flow-canvas {
+    position: relative;
+    width: 1280px;
+    height: 640px;
+    margin: 0 auto;
+  }
+  #flow-lines { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  .fs-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: center;
+    white-space: nowrap;
+    color: #fff;
+    z-index: 2;
+    box-shadow: 0 1px 2px var(--shadow);
+  }
+  .fs-node.neutral { color: var(--text-primary); background: transparent; border: 1.5px dashed var(--fs-neutral); }
+  .fs-node.terminal { color: var(--text-primary); background: transparent; border: 1.5px solid var(--text-muted); }
+
+  .edge-label {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+    background: var(--surface-1);
+    padding: 1px 6px;
+    border-radius: 6px;
+    white-space: nowrap;
+    z-index: 3;
+  }
+
+  /* ---------- Leyenda ---------- */
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 22px; padding: 18px 22px; border-top: 1px solid var(--gridline); font-size: 0.8rem; }
+  .legend-item { display: flex; align-items: center; gap: 7px; color: var(--text-secondary); }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .swatch.line { width: 18px; height: 0; border-top: 2px solid; border-radius: 0; }
+  .swatch.dashed { border-top-style: dashed; }
+
+  /* ---------- Tabla accesible ---------- */
+  table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  table.data-table caption {
+    text-align: left; color: var(--text-secondary); font-size: 0.85rem; padding: 14px 18px 4px;
+  }
+  table.data-table th, table.data-table td {
+    text-align: left; padding: 9px 16px; border-bottom: 1px solid var(--gridline);
+  }
+  table.data-table th { color: var(--text-secondary); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.02em; }
+  table.data-table td code { font-size: 0.82rem; background: var(--page); padding: 1px 5px; border-radius: 4px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+
+  footer { margin-top: 60px; color: var(--text-muted); font-size: 0.8rem; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="page-head">
+    <div>
+      <h1>Bakandeya Agent Manager</h1>
+      <p class="subtitle">Mapa mental de la arquitectura y diagrama de flujo del ciclo de vida de un lead.
+        Complemento visual de <code>docs/como_funciona.md</code> y <code>docs/guia_mantenimiento.md</code>.</p>
+    </div>
+    <button id="theme-toggle" type="button" aria-label="Cambiar tema claro/oscuro">🌓 Cambiar tema</button>
+  </header>
+
+  <!-- ======================= MAPA MENTAL ======================= -->
+  <section>
+    <h2>1. Mapa mental — cómo está construido el sistema</h2>
+    <p class="section-note">
+      Cinco piezas alrededor de la Google Sheet, que es el orquestador real (no hay ningún proceso
+      coordinador aparte). Pasa el ratón por encima de una caja para ver su descripción completa
+      en el <code>title</code> del navegador si el texto no cabe.
+    </p>
+    <div class="panel">
+      <div id="mindmap-canvas">
+        <svg id="mindmap-lines"></svg>
+      </div>
+      <div class="legend" id="mindmap-legend"></div>
+    </div>
+
+    <table class="data-table">
+      <caption>Vista en tabla (accesible) — las mismas ramas del mapa mental</caption>
+      <thead><tr><th>Rama</th><th>Elemento</th><th>Qué es</th></tr></thead>
+      <tbody id="mindmap-table"></tbody>
+    </table>
+  </section>
+
+  <!-- ======================= DIAGRAMA DE FLUJO ======================= -->
+  <section>
+    <h2>2. Diagrama de flujo — la máquina de estados (<code>lib/estados.py</code>)</h2>
+    <p class="section-note">
+      Cada flecha sólida es una transición del "camino feliz", con el agente que la ejecuta como
+      etiqueta. Las flechas discontinuas son caminos secundarios (rechazos, vueltas atrás). Casi
+      cualquier estado activo puede pasar a <code>descartado</code> a criterio humano — para no
+      saturar el dibujo, solo se traza esa flecha desde <code>no_interesado</code>.
+    </p>
+    <div class="panel">
+      <div id="flow-canvas">
+        <svg id="flow-lines"></svg>
+      </div>
+      <div class="legend" id="flow-legend"></div>
+    </div>
+
+    <table class="data-table">
+      <caption>Vista en tabla (accesible) — grafo de transiciones completo</caption>
+      <thead><tr><th>Estado</th><th>Descripción</th><th>Puede pasar a</th></tr></thead>
+      <tbody id="flow-table"></tbody>
+    </table>
+  </section>
+
+  <footer>
+    Generado para Bakandeya Agent Manager · Paleta y método de diseño: skill <code>dataviz</code>
+    (validada con <code>validate_palette.js</code>, CVD-safe en claro y oscuro).
+  </footer>
+</div>
+
+<script>
+/* =================================================================
+   1. TEMA CLARO/OSCURO
+   ================================================================= */
+(function initTheme() {
+  const saved = localStorage.getItem('bakandeya-theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = saved || (prefersDark ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', theme);
+})();
+document.getElementById('theme-toggle').addEventListener('click', () => {
+  const html = document.documentElement;
+  const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('bakandeya-theme', next);
+});
+
+/* =================================================================
+   2. MAPA MENTAL — datos + layout radial calculado
+   ================================================================= */
+const MINDMAP = {
+  label: 'Bakandeya\nAgent Manager',
+  sub: 'la hoja "leads" es el orquestador',
+  branches: [
+    {
+      id: 'agentes', label: 'Agentes', colorVar: '--br-agentes',
+      desc: 'Los 5 scripts en agents/ — cada uno lee un estado, actúa y termina.',
+      children: [
+        { label: 'scout_descubridor.py', sub: 'descubre nombres', full: 'Descubre nombres nuevos por región/tipo · Gemini Flash' },
+        { label: 'scout.py', sub: 'enriquece contactos', full: 'Enriquece leads "nuevo" con datos de contacto · Gemini Flash' },
+        { label: 'redactor.py', sub: 'redacta el pitch', full: 'Genera la propuesta por email · Gemini Flash' },
+        { label: 'enviador.py', sub: 'crea el borrador', full: 'Crea el borrador/envío en Gmail · sin IA' },
+        { label: 'lector_bandeja.py', sub: 'clasifica respuestas', full: 'Clasifica las respuestas recibidas · Gemini Flash' },
+      ],
+    },
+    {
+      id: 'coordinacion', label: 'Coordinación\nde estados', colorVar: '--br-coordinacion',
+      desc: 'lib/estados.py — la fuente única de verdad de qué transición es legal.',
+      children: [
+        { label: 'TRANSICIONES', sub: 'grafo de saltos válidos', full: 'Diccionario {estado: {destinos permitidos}} en lib/estados.py' },
+        { label: 'transicionar()', sub: 'único punto de escritura', full: 'Única función que todos los agentes usan para cambiar de estado' },
+        { label: '9 estados', sub: 'nuevo … descartado', full: 'Los 9 estados canónicos del pipeline' },
+      ],
+    },
+    {
+      id: 'infra', label: 'Infraestructura\n(lib/)', colorVar: '--br-infra',
+      desc: 'Clientes compartidos que envuelven cada servicio externo.',
+      children: [
+        { label: 'sheets.py', sub: 'la Google Sheet', full: 'Lectura/escritura de la Google Sheet' },
+        { label: 'busqueda.py', sub: 'DuckDuckGo', full: 'Búsqueda DuckDuckGo compartida (scout + descubridor)' },
+        { label: 'gemini_client.py', sub: 'IA activa', full: 'Cliente de Gemini — usado por todos los agentes con IA' },
+        { label: 'claude_client.py', sub: 'sin usar', full: 'Cliente de Claude — existe pero ningún agente lo usa (decisión 10-jul-2026)', dim: true },
+        { label: 'gmail_client.py', sub: 'Gmail + simulado', full: 'Envío/lectura de Gmail, real o en modo simulado' },
+        { label: 'telegram.py', sub: 'notificaciones', full: 'Notificaciones a Telegram (mock si faltan credenciales)' },
+        { label: '__init__.py', sub: 'truststore', full: 'Fuerza el uso del almacén de certificados del SO (proxy corporativo)' },
+      ],
+    },
+    {
+      id: 'datos', label: 'Datos', colorVar: '--br-datos',
+      desc: 'Lo que persiste entre ejecuciones.',
+      children: [
+        { label: 'Google Sheet "leads"', sub: '17 columnas', full: 'La hoja de cálculo: 17 columnas, una fila = un lead' },
+        { label: 'epk_bakandeya.json', sub: 'EPK de la banda', full: 'Bio, enlaces, rider técnico y caché de Bakandeya' },
+      ],
+    },
+    {
+      id: 'calidad', label: 'Calidad\ny pruebas', colorVar: '--br-calidad',
+      desc: 'Todo lo que no toca la red de verdad.',
+      children: [
+        { label: 'tests/', sub: 'pytest + mocks', full: 'pytest con mocks de Sheets/Gmail/IA — nunca toca la red' },
+        { label: '.claude/skills/', sub: 'guías auto-cargadas', full: 'Guías que Claude Code carga automáticamente al tocar un área' },
+        { label: 'scripts/', sub: 'utilidades', full: 'Utilidades de mantenimiento, fuera del pipeline' },
+      ],
+    },
+  ],
+};
+
+function layoutMindmap() {
+  const canvas = document.getElementById('mindmap-canvas');
+  const svg = document.getElementById('mindmap-lines');
+  svg.innerHTML = '';
+  canvas.querySelectorAll('.mm-node').forEach(n => n.remove());
+
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  const cx = W / 2, cy = H / 2;
+  const R1 = Math.min(W, H) * 0.19;
+
+  const legend = document.getElementById('mindmap-legend');
+  const tbody = document.getElementById('mindmap-table');
+  legend.innerHTML = '';
+  tbody.innerHTML = '';
+
+  const center = document.createElement('div');
+  center.className = 'mm-node mm-center';
+  center.innerHTML = `<span class="mm-label">${MINDMAP.label.replace('\n', '<br>')}</span><span class="mm-sub">${MINDMAP.sub}</span>`;
+  canvas.appendChild(center);
+  placeNode(center, cx, cy);
+
+  // Presupuesto angular proporcional al nº de hijos de cada rama (no a partes iguales),
+  // así una rama con 7 hijos (Infraestructura) no se aprieta en el mismo hueco que una
+  // con 2 (Datos). Se deja un hueco fijo entre ramas para que no se toquen.
+  const n = MINDMAP.branches.length;
+  const totalChildren = MINDMAP.branches.reduce((s, b) => s + b.children.length, 0);
+  const gapDeg = 10;
+  const usableDeg = 360 - gapDeg * n;
+  let cursorDeg = -90 - usableDeg / 2; // centrar el reparto empezando arriba
+
+  MINDMAP.branches.forEach((branch) => {
+    const m = branch.children.length;
+    const sliceDeg = usableDeg * (m / totalChildren);
+    const angleDeg = cursorDeg + sliceDeg / 2;
+    cursorDeg += sliceDeg + gapDeg;
+
+    const angleRad = angleDeg * Math.PI / 180;
+    const bx = cx + R1 * Math.cos(angleRad);
+    const by = cy + R1 * Math.sin(angleRad);
+
+    const branchEl = document.createElement('div');
+    branchEl.className = `mm-node mm-branch c-${branch.id}`;
+    branchEl.innerHTML = `<span class="mm-label">${branch.label.replace('\n', '<br>')}</span>`;
+    branchEl.title = branch.desc;
+    canvas.appendChild(branchEl);
+    placeNode(branchEl, bx, by);
+    drawLine(svg, cx, cy, bx, by, `var(${branch.colorVar})`, 3, false, 0.9);
+
+    const li = document.createElement('div');
+    li.className = 'legend-item';
+    li.innerHTML = `<span class="swatch" style="background:var(${branch.colorVar})"></span> ${branch.label.replace('\n', ' ')}`;
+    legend.appendChild(li);
+
+    // Radio de los hijos: crece con el nº de hijos, para que tengan más circunferencia
+    // disponible aunque su franja angular no sea proporcionalmente mayor.
+    const R2 = Math.min(W, H) * 0.30 + m * 26;
+    const childSpread = sliceDeg * 0.92; // un poco menos que la franja, para no tocar la rama vecina
+
+    branch.children.forEach((child, j) => {
+      const childAngleDeg = m === 1 ? angleDeg : angleDeg - childSpread / 2 + childSpread * (j / (m - 1));
+      const childAngleRad = childAngleDeg * Math.PI / 180;
+      const lx = cx + R2 * Math.cos(childAngleRad);
+      const ly = cy + R2 * Math.sin(childAngleRad);
+
+      const leafEl = document.createElement('div');
+      leafEl.className = 'mm-node mm-leaf' + (child.dim ? ' dim' : '');
+      leafEl.innerHTML = `<span class="mm-label">${child.label}</span><span class="mm-sub">${child.sub}</span>`;
+      leafEl.title = child.full || child.sub;
+      canvas.appendChild(leafEl);
+      placeNode(leafEl, lx, ly);
+      drawLine(svg, bx, by, lx, ly, `var(${branch.colorVar})`, 1.4, true, 0.55);
+
+      const row = document.createElement('tr');
+      row.innerHTML = `<td><span class="dot" style="background:var(${branch.colorVar})"></span>${branch.label.replace('\n', ' ')}</td>
+                        <td>${child.label}</td><td>${child.full || child.sub}</td>`;
+      tbody.appendChild(row);
+    });
+  });
+}
+
+/* =================================================================
+   3. DIAGRAMA DE FLUJO — posiciones fijas + grafo de lib/estados.py
+   ================================================================= */
+const FLOW_NODES = {
+  antiguo:               { x: 90,   y: 300, label: 'antiguo',               kind: 'neutral',  desc: 'Leads precargados a mano, fuera del pipeline hasta normalizar.' },
+  nuevo:                 { x: 300,  y: 300, label: 'nuevo',                 var: '--fs-nuevo',       desc: 'Recién descubierto o pendiente de enriquecer.' },
+  sin_contacto:          { x: 300,  y: 500, label: 'sin_contacto',          var: '--fs-sin-contacto',desc: 'El scout no encontró email tras búsqueda exhaustiva (terminal, reversible).' },
+  pendiente_aprobacion:  { x: 550,  y: 300, label: 'pendiente_aprobacion',  var: '--fs-pendiente',   desc: 'Pitch redactado, esperando el OK humano.' },
+  aprobado:              { x: 790,  y: 300, label: 'aprobado',              var: '--fs-aprobado',    desc: 'Diego aprobó a mano: listo para enviar.' },
+  esperando_respuesta:   { x: 1030, y: 300, label: 'esperando_respuesta',   var: '--fs-esperando',   desc: 'Borrador/email enviado, esperando respuesta de la sala.' },
+  interesado:            { x: 1200, y: 130, label: '✓ interesado',          st: '--st-good',         desc: 'Respuesta positiva clasificada por el lector_bandeja.' },
+  negociando:            { x: 1200, y: 300, label: '⚠ negociando',          st: '--st-warning',      desc: 'Entra negociación real: la gestiona un humano.' },
+  no_interesado:         { x: 1200, y: 470, label: '✕ no_interesado',       st: '--st-critical',     desc: 'Respuesta negativa clasificada por el lector_bandeja.' },
+  descartado:            { x: 790,  y: 560, label: 'descartado',            kind: 'terminal', desc: 'Terminal, fuera del embudo. Sin salida en el grafo.' },
+};
+
+const FLOW_EDGES = [
+  // primarias — camino feliz, con el agente que las ejecuta
+  { from: 'antiguo', to: 'nuevo', primary: true, label: '(normalizar, manual)' },
+  // nuevo <-> pendiente_aprobacion van en los dos sentidos: se separan con dy para que
+  // ni las líneas ni las etiquetas queden exactamente una encima de la otra.
+  { from: 'nuevo', to: 'pendiente_aprobacion', primary: true, label: 'redactor', dy: -14 },
+  { from: 'pendiente_aprobacion', to: 'aprobado', primary: true, label: 'Diego aprueba' },
+  { from: 'aprobado', to: 'esperando_respuesta', primary: true, label: 'enviador' },
+  { from: 'esperando_respuesta', to: 'interesado', primary: true, label: 'lector_bandeja' },
+  { from: 'esperando_respuesta', to: 'negociando', primary: true, label: '' },
+  { from: 'esperando_respuesta', to: 'no_interesado', primary: true, label: '' },
+  // secundarias — rechazos y vueltas atrás
+  // nuevo <-> sin_contacto también van en los dos sentidos: se separan con dx.
+  { from: 'nuevo', to: 'sin_contacto', primary: false, label: 'scout: sin email', dx: -16 },
+  { from: 'sin_contacto', to: 'nuevo', primary: false, label: 'contacto añadido', dx: 16 },
+  { from: 'pendiente_aprobacion', to: 'nuevo', primary: false, label: 'pitch rechazado', dy: 14 },
+  { from: 'negociando', to: 'interesado', primary: false, label: '' },
+  { from: 'negociando', to: 'no_interesado', primary: false, label: '' },
+  { from: 'no_interesado', to: 'descartado', primary: false, label: '' },
+];
+
+function edgeColor(id) {
+  const n = FLOW_NODES[id];
+  return n.st ? `var(${n.st})` : n.var ? `var(${n.var})` : 'var(--text-muted)';
+}
+
+function layoutFlow() {
+  const canvas = document.getElementById('flow-canvas');
+  const svg = document.getElementById('flow-lines');
+  svg.innerHTML = '';
+  canvas.querySelectorAll('.fs-node, .edge-label').forEach(n => n.remove());
+
+  Object.entries(FLOW_NODES).forEach(([id, n]) => {
+    const el = document.createElement('div');
+    el.className = 'fs-node' + (n.kind === 'neutral' ? ' neutral' : n.kind === 'terminal' ? ' terminal' : '');
+    el.textContent = n.label;
+    if (!n.kind) el.style.background = n.st ? `var(${n.st})` : `var(${n.var})`;
+    el.title = n.desc;
+    canvas.appendChild(el);
+    placeNode(el, n.x, n.y);
+  });
+
+  FLOW_EDGES.forEach(e => {
+    const a = FLOW_NODES[e.from], b = FLOW_NODES[e.to];
+    const color = edgeColor(e.to);
+    drawLine(svg, a.x, a.y, b.x, b.y, color, e.primary ? 2.4 : 1.6, !e.primary, e.primary ? 0.9 : 0.55, true);
+    if (e.label) {
+      const lbl = document.createElement('div');
+      lbl.className = 'edge-label';
+      lbl.textContent = e.label;
+      canvas.appendChild(lbl);
+      placeNode(lbl, (a.x + b.x) / 2, (a.y + b.y) / 2);
+    }
+  });
+
+  // Leyenda
+  const legend = document.getElementById('flow-legend');
+  legend.innerHTML = `
+    <div class="legend-item"><span class="swatch" style="background:var(--fs-nuevo)"></span> nuevo</div>
+    <div class="legend-item"><span class="swatch" style="background:var(--fs-sin-contacto)"></span> sin_contacto</div>
+    <div class="legend-item"><span class="swatch" style="background:var(--fs-pendiente)"></span> pendiente_aprobación</div>
+    <div class="legend-item"><span class="swatch" style="background:var(--fs-aprobado)"></span> aprobado</div>
+    <div class="legend-item"><span class="swatch" style="background:var(--fs-esperando)"></span> esperando_respuesta</div>
+    <div class="legend-item"><span class="swatch" style="background:var(--st-good)"></span> interesado (estatus)</div>
+    <div class="legend-item"><span class="swatch" style="background:var(--st-warning)"></span> negociando (estatus)</div>
+    <div class="legend-item"><span class="swatch" style="background:var(--st-critical)"></span> no_interesado (estatus)</div>
+    <div class="legend-item"><span class="swatch line" style="border-color:var(--text-muted)"></span> transición primaria</div>
+    <div class="legend-item"><span class="swatch line dashed" style="border-color:var(--text-muted)"></span> transición secundaria</div>
+  `;
+
+  // Tabla accesible: grafo completo (coincide con TRANSICIONES en lib/estados.py)
+  const GRAPH = {
+    antiguo: ['nuevo', 'descartado'],
+    nuevo: ['nuevo (reprocesar)', 'pendiente_aprobacion', 'sin_contacto', 'descartado'],
+    sin_contacto: ['nuevo', 'descartado'],
+    pendiente_aprobacion: ['aprobado', 'nuevo', 'descartado'],
+    aprobado: ['esperando_respuesta', 'descartado'],
+    esperando_respuesta: ['interesado', 'no_interesado', 'negociando'],
+    interesado: ['negociando', 'descartado'],
+    negociando: ['interesado', 'no_interesado', 'descartado'],
+    no_interesado: ['descartado'],
+    descartado: ['— (terminal)'],
+  };
+  const tbody = document.getElementById('flow-table');
+  tbody.innerHTML = '';
+  Object.entries(GRAPH).forEach(([id, dest]) => {
+    const n = FLOW_NODES[id];
+    const color = n.st ? `var(${n.st})` : n.var ? `var(${n.var})` : 'var(--text-muted)';
+    const row = document.createElement('tr');
+    row.innerHTML = `<td><span class="dot" style="background:${color}"></span><code>${id}</code></td>
+                      <td>${n.desc}</td><td>${dest.map(d => `<code>${d}</code>`).join(', ')}</td>`;
+    tbody.appendChild(row);
+  });
+}
+
+/* =================================================================
+   4. Helpers de dibujo
+   ================================================================= */
+function placeNode(el, x, y) {
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function drawLine(svg, x1, y1, x2, y2, color, width, dashed, opacity, arrow) {
+  const line = document.createElementNS(SVG_NS, 'line');
+  line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+  line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+  line.setAttribute('stroke', color);
+  line.setAttribute('stroke-width', width);
+  line.setAttribute('stroke-linecap', 'round');
+  line.setAttribute('opacity', opacity != null ? opacity : 0.8);
+  if (dashed) line.setAttribute('stroke-dasharray', '3 5');
+  if (arrow) line.setAttribute('marker-end', 'url(#arrowhead)');
+  svg.appendChild(line);
+}
+
+function ensureArrowMarker(svg) {
+  const defs = document.createElementNS(SVG_NS, 'defs');
+  defs.innerHTML = `
+    <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"></path>
+    </marker>`;
+  svg.appendChild(defs);
+}
+
+/* =================================================================
+   5. Arranque
+   ================================================================= */
+function renderAll() {
+  layoutMindmap();
+  ensureArrowMarker(document.getElementById('flow-lines'));
+  layoutFlow();
+}
+window.addEventListener('DOMContentLoaded', renderAll);
+</script>
+</body>
+</html>

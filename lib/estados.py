@@ -47,6 +47,8 @@ ESTADOS_VALIDOS = set(TRANSICIONES) | {e for destinos in TRANSICIONES.values() f
 def es_transicion_valida(estado_actual, nuevo_estado):
     """Devuelve True si pasar de `estado_actual` a `nuevo_estado` está permitido por el grafo."""
     estado_actual = (estado_actual or "").strip()
+    if estado_actual == nuevo_estado:
+        return True
     return nuevo_estado in TRANSICIONES.get(estado_actual, set())
 
 

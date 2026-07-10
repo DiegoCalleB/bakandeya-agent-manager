@@ -29,6 +29,16 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: echo "$GOOGLE_SERVICE_ACCOUNT_JSON" > credentials_service_account.json
 
+      - name: Escribir credenciales de cliente OAuth de Gmail
+        env:
+          GMAIL_CREDENTIALS_JSON: ${{ secrets.GMAIL_CREDENTIALS_JSON }}
+        run: echo "$GMAIL_CREDENTIALS_JSON" > credentials.json
+
+      - name: Escribir token de sesion de Gmail
+        env:
+          GMAIL_TOKEN_JSON: ${{ secrets.GMAIL_TOKEN_JSON }}
+        run: echo "$GMAIL_TOKEN_JSON" > token.json
+
       - name: Ejecutar agente Lector de Bandeja
         env:
           GOOGLE_APPLICATION_CREDENTIALS: credentials_service_account.json
@@ -36,8 +46,4 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          # Igual que en enviador.yml: sin OAuth real de Gmail en CI, se queda en modo
-          # simulado (lee drafts/respuestas_simuladas.json, que no existe en el runner
-          # -> no clasifica nada real todavía, pero no rompe el workflow).
-          EMAIL_MODE: simulado
         run: python agents/lector_bandeja.py

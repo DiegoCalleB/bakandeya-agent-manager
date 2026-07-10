@@ -5,6 +5,10 @@ de VBA/Access, la idea más importante que tienes que interiorizar es esta: **aq
 programa "grande" corriendo todo el rato**. Hay varios scripts pequeños e independientes que se
 despiertan, hacen una cosa, y se apagan. Lo que los coordina no es código: es una hoja de cálculo.
 
+> Este documento es la **introducción conceptual**. Para el detalle técnico completo (función por
+> función, recetas de mantenimiento, deuda técnica pendiente) ver
+> [`docs/guia_mantenimiento.md`](guia_mantenimiento.md).
+
 ---
 
 ## 1. La idea central: la Google Sheet ES el orquestador
@@ -34,12 +38,12 @@ su estado y el agente lo reintenta la próxima vez que se ejecute.
                           ▼
    ┌────────┐  redactor  ┌──────────────────────┐  (Diego revisa a mano)  ┌──────────┐
    │ nuevo  │──────────► │ pendiente_aprobacion │ ──────────────────────► │ aprobado │
-   └────────┘            └──────────────────────┘                         └────┬─────┘
-                                                                                │ enviador
-                                                                                ▼
-                                                                    ┌──────────────────────┐
-                                                                    │  esperando_respuesta │
-                                                                    └───────────┬──────────┘
+   └───┬────┘            └──────────────────────┘                         └────┬─────┘
+       │ scout: búsqueda exhaustiva sin email                                  │ enviador
+       ▼                                                                       ▼
+┌──────────────┐                                                  ┌──────────────────────┐
+│ sin_contacto │ (terminal, pero puede volver a 'nuevo' a mano)    │  esperando_respuesta │
+└──────────────┘                                                  └───────────┬──────────┘
                                                                                 │ lector_bandeja
                              ┌──────────────────────────────────────────────────┼───────────────┐
                              ▼                          ▼                         ▼               ▼
@@ -49,6 +53,11 @@ su estado y el agente lo reintenta la próxima vez que se ejecute.
 **La barrera humana está entre `pendiente_aprobacion` y `aprobado`.** Ese salto SOLO lo hace
 Diego a mano en la hoja. Ningún email sale sin ese visto bueno. Es una regla innegociable
 (ver `CLAUDE.md`): la IA propone, el humano dispone.
+
+**`sin_contacto` existe para no dejar leads atascados**: si el scout busca a fondo y no encuentra
+ningún email, el lead sale de `nuevo` (donde se reintentaría para siempre en cada cron) a este
+estado terminal. Todas las transiciones válidas viven en un único sitio: `lib/estados.py` — ver
+la guía de mantenimiento para el grafo completo.
 
 ---
 
@@ -61,14 +70,15 @@ y que en producción lanza un cron de GitHub Actions. Aquí, qué hace cada uno:
 |---|---|---|---|---|
 | `scout_descubridor.py` | — (busca en la web) | `nuevo` | Gemini Flash | Descubrir nombres es volumen y barato |
 | `scout.py` | `nuevo` (incompletos) | `nuevo` (enriquecido) | Gemini Flash | Extraer contactos es volumen y barato |
-| `redactor.py` | `nuevo` (con email) | `pendiente_aprobacion` | **Claude Sonnet** (pendiente de migrar) | La calidad del texto vende el bolo |
+| `redactor.py` | `nuevo` (con email) | `pendiente_aprobacion` | Gemini Flash | La calidad del texto vende el bolo, pero se decidió (10-jul-2026) mantener un solo modelo |
 | `enviador.py` | `aprobado` | `esperando_respuesta` | — (no usa IA) | Solo manda el email por Gmail |
-| `lector_bandeja.py` | `esperando_respuesta` | `interesado`/`no_interesado`/`negociando` | Gemini/Claude Haiku | Clasificar 3 etiquetas es simple y barato |
+| `lector_bandeja.py` | `esperando_respuesta` | `interesado`/`no_interesado`/`negociando` | Gemini Flash | Clasificar 3 etiquetas es simple y barato (antes usaba Claude Haiku) |
 
-> **Estrategia de modelo (híbrida).** Se usa **Gemini Flash** para las tareas de volumen y bajo
-> coste (buscar, enriquecer, clasificar) y **Claude Sonnet** donde la calidad de redacción
-> importa de verdad (el redactor). Hoy el redactor todavía usa Gemini; migrarlo a Sonnet está
-> pendiente. El wrapper de cada proveedor vive en `lib/gemini_client.py` y `lib/claude_client.py`.
+> **Estrategia de modelo (mono-modelo, decisión del 10-jul-2026).** Los 5 agentes usan
+> **Gemini Flash** — incluido el redactor, aunque la calidad de redacción es lo que más se
+> beneficiaría de un modelo mejor. Se descartó explícitamente migrar el redactor a Claude Sonnet
+> para mantener una sola API que mantener durante la Fase 1. `lib/claude_client.py` existe en el
+> repo pero **ningún agente lo usa** hoy; si se retoma la migración, revisar esta decisión primero.
 
 ### scout_descubridor.py — el que encuentra sitios nuevos
 Le das una región y un tipo (`python agents/scout_descubridor.py --region Pontevedra --tipo sala`).
@@ -148,9 +158,19 @@ Cada archivo de `lib/` envuelve un servicio externo y devuelve valores "seguros"
 - **`sheets.py`** — la "base de datos". Lee/escribe la Google Sheet vía `gspread`. Funciones
   clave: `obtener_leads(estado=...)`, `actualizar_datos_lead()`, `actualizar_estado_lead()`,
   `crear_leads()`.
+- **`estados.py`** — la máquina de estados: define qué transiciones son válidas y expone
+  `transicionar(lead, nuevo_estado)`, que todos los agentes usan en vez de escribir el estado a
+  mano. Evita transiciones absurdas y leads atascados.
+- **`busqueda.py`** — búsqueda en DuckDuckGo compartida entre `scout.py` y `scout_descubridor.py`
+  (antes estaba duplicada en los dos).
 - **`gemini_client.py`** / **`claude_client.py`** — llamadas a la IA (ver sección 3).
-- **`gmail_client.py`** — enviar y leer correo con Gmail (OAuth de usuario).
+- **`gmail_client.py`** — enviar y leer correo con Gmail. Tiene un **modo simulado** automático
+  (si no hay `credentials.json`): en vez de tocar Gmail de verdad, guarda los borradores como
+  HTML local en `drafts/` y lee respuestas de prueba de un JSON — así se puede probar el pipeline
+  entero sin arriesgar nada.
 - **`telegram.py`** — notificaciones. Si faltan credenciales, imprime un mock y sigue.
+- **`__init__.py`** — hace que Python confíe en el almacén de certificados de Windows
+  (`truststore`), necesario si estás detrás de un proxy corporativo que reescribe el HTTPS.
 
 ---
 

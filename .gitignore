@@ -20,3 +20,6 @@ __pycache__/
 .vscode/
 .idea/
 .DS_Store
+
+# Artefactos generados por los agentes (borradores con emails reales de contactos: no versionar)
+drafts/

@@ -189,7 +189,10 @@ def mock_gemini_api(mocker):
         prompt_lower = prompt.lower() if prompt else ""
         system_lower = system_instruction.lower() if system_instruction else ""
         
-        # El redactor se evalúa primero para evitar conflictos con la palabra 'email' en su prompt
+        # El clasificador de bandeja de entrada se evalúa primero con palabras clave específicas para evitar falsas coincidencias
+        if "lector" in system_lower or "clasifica" in prompt_lower or "categor" in prompt_lower:
+            return "interesado"
+        # El redactor
         if "redactor" in system_lower or "pitch" in prompt_lower or "propuesta" in prompt_lower:
             return "PITCH GENERADO MOCK: Hola, nos gustaría presentar a Bakandeya en vuestra sala."
         # El scout devuelve un JSON para extraer los datos

@@ -1,5 +1,6 @@
 import os
 import base64
+import json
 from email.mime.text import MIMEText
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -12,6 +13,14 @@ SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/gmail.compose'
 ]
+
+def es_modo_simulado():
+    """
+    Determina si se debe usar el modo simulado de email (si no existe credentials.json
+    o si la variable de entorno EMAIL_MODE es 'simulado').
+    """
+    credentials_path = os.getenv("GMAIL_CREDENTIALS_PATH", "credentials.json")
+    return os.getenv("EMAIL_MODE") == "simulado" or not os.path.exists(credentials_path)
 
 def obtener_servicio_gmail():
     """
@@ -45,8 +54,12 @@ def obtener_servicio_gmail():
 
 def enviar_email(destinatario, asunto, cuerpo_texto):
     """
-    Envía un email plano usando el servicio de Gmail.
+    Envía un email plano usando el servicio de Gmail o lo guarda localmente si está en modo simulado.
     """
+    if es_modo_simulado():
+        print(f"[gmail_client.py] MODO SIMULADO: Redirigiendo envío de email a creación de borrador local...")
+        return crear_borrador(destinatario, asunto, cuerpo_texto)
+        
     try:
         service = obtener_servicio_gmail()
         mensaje = MIMEText(cuerpo_texto)
@@ -66,8 +79,91 @@ def enviar_email(destinatario, asunto, cuerpo_texto):
 
 def crear_borrador(destinatario, asunto, cuerpo_texto):
     """
-    Crea un borrador (draft) en Gmail en lugar de enviarlo directamente.
+    Crea un borrador (draft) en Gmail o lo guarda localmente en un archivo HTML en modo simulado.
     """
+    if es_modo_simulado():
+        print(f"[gmail_client.py] MODO SIMULADO: Guardando borrador local para {destinatario}...")
+        try:
+            ruta_drafts = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "drafts")
+            os.makedirs(ruta_drafts, exist_ok=True)
+            
+            # Limpiar nombre de archivo
+            nombre_limpio = "".join(c for c in destinatario if c.isalnum() or c in "@.-_").rstrip()
+            ruta_archivo = os.path.join(ruta_drafts, f"borrador_{nombre_limpio}.html")
+            
+            cuerpo_html = cuerpo_texto.replace("\n", "<br>")
+            contenido_html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Borrador para {destinatario}</title>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f5f7;
+            padding: 20px;
+            color: #333;
+        }}
+        .email-container {{
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #fff;
+            border: 1px solid #e1e4e8;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            overflow: hidden;
+        }}
+        .email-header {{
+            background-color: #f6f8fa;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e1e4e8;
+        }}
+        .header-line {{
+            margin-bottom: 8px;
+            font-size: 14px;
+        }}
+        .header-line strong {{
+            color: #586069;
+        }}
+        .email-body {{
+            padding: 25px 20px;
+            font-size: 15px;
+            line-height: 1.6;
+            color: #24292e;
+        }}
+        .sim-badge {{
+            display: inline-block;
+            background-color: #dbedff;
+            color: #0366d6;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="email-header">
+            <span class="sim-badge">Borrador Simulado Local</span>
+            <div class="header-line"><strong>Para:</strong> {destinatario}</div>
+            <div class="header-line"><strong>Asunto:</strong> {asunto}</div>
+        </div>
+        <div class="email-body">{cuerpo_html}</div>
+    </div>
+</body>
+</html>
+"""
+            with open(ruta_archivo, "w", encoding="utf-8") as f:
+                f.write(contenido_html)
+                
+            print(f"[gmail_client.py] Borrador guardado localmente en: {ruta_archivo}")
+            return {"id": f"sim_draft_{nombre_limpio}", "local_path": ruta_archivo}
+        except Exception as e:
+            print(f"Error al guardar borrador simulado para {destinatario}: {e}")
+            return None
+            
     try:
         service = obtener_servicio_gmail()
         mensaje = MIMEText(cuerpo_texto)
@@ -87,9 +183,41 @@ def crear_borrador(destinatario, asunto, cuerpo_texto):
 
 def leer_respuestas(query="is:unread"):
     """
-    Busca emails entrantes y sin leer. Devuelve una lista de diccionarios
-    con el remitente, asunto, fecha y cuerpo del mensaje.
+    Busca emails entrantes y sin leer en Gmail o lee respuestas simuladas locales.
     """
+    if es_modo_simulado():
+        print("[gmail_client.py] MODO SIMULADO: Buscando respuestas en archivo local...")
+        ruta_drafts = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "drafts")
+        ruta_respuestas = os.path.join(ruta_drafts, "respuestas_simuladas.json")
+        
+        if not os.path.exists(ruta_respuestas):
+            plantilla = [
+                {
+                    "id": "reply_sim_001",
+                    "remitente": "comercial@aliatar.es",
+                    "asunto": "Re: Propuesta de concierto: Bakandeya en Sala Aliatar",
+                    "fecha": "Fri, 10 Jul 2026 12:00:00 +0200",
+                    "cuerpo": "Hola. Nos parece muy interesante vuestra propuesta. ¿Qué caché manejáis para salas y qué disponibilidad tenéis en septiembre?"
+                }
+            ]
+            try:
+                os.makedirs(ruta_drafts, exist_ok=True)
+                with open(ruta_respuestas, "w", encoding="utf-8") as f:
+                    json.dump(plantilla, f, indent=4, ensure_ascii=False)
+                print(f"[gmail_client.py] Se ha creado una plantilla de respuestas simuladas en: {ruta_respuestas}")
+            except Exception as e:
+                print(f"Error al crear plantilla de respuestas: {e}")
+            return []
+            
+        try:
+            with open(ruta_respuestas, "r", encoding="utf-8") as f:
+                respuestas = json.load(f)
+            print(f"[gmail_client.py] Cargadas {len(respuestas)} respuestas simuladas.")
+            return respuestas
+        except Exception as e:
+            print(f"Error al leer respuestas simuladas de {ruta_respuestas}: {e}")
+            return []
+            
     try:
         service = obtener_servicio_gmail()
         resultado = service.users().messages().list(userId='me', q=query).execute()

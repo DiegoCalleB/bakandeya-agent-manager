@@ -13,7 +13,12 @@ def enviar_notificacion_telegram(mensaje):
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     
     if not bot_token or not chat_id:
-        print(f"[Telegram Mock] {mensaje}")
+        try:
+            print(f"[Telegram Mock] {mensaje}")
+        except UnicodeEncodeError:
+            # Fallback seguro para consolas de Windows que no soportan emojis UTF-8 por defecto
+            mensaje_seguro = mensaje.encode('ascii', errors='replace').decode('ascii')
+            print(f"[Telegram Mock] {mensaje_seguro}")
         return False
         
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"

@@ -5,7 +5,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import lib.sheets as sheets
 import lib.gmail_client as gmail_client
-import lib.claude_client as claude_client
+import lib.gemini_client as gemini_client
 import lib.telegram as telegram
 
 def procesar_bandeja_entrada():
@@ -56,12 +56,12 @@ def procesar_bandeja_entrada():
             "Debes responder estrictamente con una de las tres palabras: 'interesado', 'no_interesado' o 'negociando'."
         )
         
-        # Haiku es suficiente y más barato para clasificar
-        clasificacion = claude_client.generar_texto(
+        # Gemini 2.5 Flash es rápido y eficiente para clasificar
+        clasificacion = gemini_client.generar_texto_gemini(
             prompt, 
-            model="claude-3-haiku-20240307", 
-            system_prompt=system_prompt,
-            max_tokens=10
+            model_name="gemini-2.5-flash", 
+            system_instruction=system_prompt,
+            temperature=0.1
         )
         
         if clasificacion:

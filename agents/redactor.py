@@ -144,7 +144,9 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Agente Redactor para generar pitches de leads.")
     parser.add_argument("--limit", type=int, default=3, help="Límite de leads a redactar.")
+    parser.add_argument("--all", action="store_true", help="Procesar todos los leads en estado 'nuevo' que tengan email.")
     parser.add_argument("--id", type=str, default=None, help="ID de un lead específico a redactar.")
     args = parser.parse_args()
     
-    procesar_nuevos_leads(limite_leads=args.limit, lead_id_especifico=args.id)
+    limite = 99999 if args.all else args.limit
+    procesar_nuevos_leads(limite_leads=limite, lead_id_especifico=args.id)

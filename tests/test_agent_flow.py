@@ -1,7 +1,24 @@
 import pytest
 from agents.redactor import procesar_nuevos_leads
-from agents.enviador import enviar_leads_aprobados
+from agents.enviador import enviar_leads_aprobados, parsear_pitch
 from agents.lector_bandeja import procesar_bandeja_entrada
+
+
+def test_parsear_pitch_extrae_asunto():
+    """El asunto generado (ASUNTO: ...) debe ir al asunto real y NO quedarse en el cuerpo."""
+    pitch = "ASUNTO: Bakandeya en La Sala\n\n¡Hola equipo!\n\nOs escribimos porque..."
+    asunto, cuerpo = parsear_pitch(pitch, "La Sala")
+    assert asunto == "Bakandeya en La Sala"
+    assert cuerpo.startswith("¡Hola equipo!")
+    assert "ASUNTO:" not in cuerpo  # el bug: ya no se cuela en el cuerpo
+
+
+def test_parsear_pitch_sin_marcador_usa_generico():
+    """Si el pitch no trae marcador ASUNTO:, se degrada a asunto genérico + cuerpo completo."""
+    pitch = "Hola, os escribo para proponer un concierto."
+    asunto, cuerpo = parsear_pitch(pitch, "Mae West")
+    assert asunto == "Propuesta de concierto: Bakandeya en Mae West"
+    assert cuerpo == pitch
 
 def test_redactor_flow(mock_sheets_api):
     """

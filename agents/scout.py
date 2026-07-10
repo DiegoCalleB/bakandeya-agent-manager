@@ -17,12 +17,26 @@ import lib.sheets as sheets
 import lib.gemini_client as gemini_client
 
 # Ranking de niveles de confianza. La IA etiqueta cada dato extraído con uno de estos
-# niveles; solo escribimos en la Sheet los de confianza "alta". Los demás se anotan como
+# niveles; solo escribimos en la Sheet los que superan su umbral. Los demás se anotan como
 # sugerencias para revisión humana. Esto materializa la regla innegociable de verificación.
 NIVELES_CONFIANZA = {"alta": 3, "media": 2, "baja": 1}
 
+# Umbral de confianza mínimo para escribir cada campo en la Sheet.
+# Estricto en los datos de contacto (con ellos se envía el pitch: no pueden ser inventados)
+# y flexible en los datos "blandos" (género/aforo son deducciones por naturaleza, casi nunca
+# aparecen literales; exigir 'alta' los dejaría siempre vacíos). El humano verifica todo antes
+# de que un lead pase a 'aprobado', así que un blando 'media' no compromete ninguna regla.
+UMBRALES_POR_CAMPO = {
+    "email": "alta",
+    "telefono": "alta",
+    "website": "alta",
+    "instagram": "alta",
+    "genero": "media",
+    "aforo": "media",
+}
 
-def _procesar_campos_extraidos(data, campos, umbral="alta"):
+
+def _procesar_campos_extraidos(data, campos, umbral="alta", umbrales_por_campo=None):
     """
     Separa los campos extraídos por la IA en (aceptados, sugerencias).
 
@@ -30,14 +44,17 @@ def _procesar_campos_extraidos(data, campos, umbral="alta"):
       - Estructurado: {"valor": ..., "confianza": "alta|media|baja", "fuente": "[n] o URL"}
       - Plano (retrocompatibilidad con mocks/tests o funciones antiguas): el valor directo.
 
+    El umbral de aceptación se decide por campo: `umbrales_por_campo` (dict {campo: nivel})
+    tiene prioridad y, si un campo no está ahí, se usa `umbral` como valor por defecto.
+
     Devuelve:
-      - aceptados: dict {campo: valor} SOLO con los datos de confianza >= umbral.
+      - aceptados: dict {campo: valor} SOLO con los datos que superan su umbral.
       - sugerencias: lista de strings legibles con los datos de confianza insuficiente,
         para dejarlos en `notas` sin escribirlos como si fueran verificados.
     """
+    umbrales_por_campo = umbrales_por_campo or {}
     aceptados = {}
     sugerencias = []
-    umbral_num = NIVELES_CONFIANZA.get(umbral, 3)
 
     for campo in campos:
         item = data.get(campo)
@@ -58,12 +75,23 @@ def _procesar_campos_extraidos(data, campos, umbral="alta"):
         if valor is None or str(valor).strip().lower() in ("", "null", "none", "n/a"):
             continue
 
+        umbral_num = NIVELES_CONFIANZA.get(umbrales_por_campo.get(campo, umbral), 3)
         if NIVELES_CONFIANZA.get(confianza, 1) >= umbral_num:
             aceptados[campo] = valor
         else:
             sugerencias.append(f"{campo}={valor} (confianza {confianza}, fuente {fuente or '?'})")
 
     return aceptados, sugerencias
+
+
+def _combinar(destino, nuevos, campos):
+    """
+    Rellena en `destino` (dict acumulador) los `campos` que aún estén vacíos con los
+    valores de `nuevos`. Primera fuente que aporta un dato válido gana; no sobrescribe.
+    """
+    for campo in campos:
+        if not destino.get(campo) and nuevos.get(campo):
+            destino[campo] = nuevos[campo]
 
 
 def inferir_tipo_lead(nombre_lead):
@@ -210,7 +238,8 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
         return {}
 
     aceptados, sugerencias = _procesar_campos_extraidos(
-        data, campos=["email", "telefono", "instagram", "website", "genero"]
+        data, campos=["email", "telefono", "instagram", "website", "genero"],
+        umbrales_por_campo=UMBRALES_POR_CAMPO,
     )
     if sugerencias:
         aceptados["_sugerencias"] = sugerencias
@@ -340,96 +369,12 @@ def extraer_datos_contacto(texto, url_origen, tipo="sala"):
         return {}
 
     aceptados, sugerencias = _procesar_campos_extraidos(
-        data, campos=["email", "telefono", "instagram", "aforo", "genero"]
+        data, campos=["email", "telefono", "instagram", "aforo", "genero"],
+        umbrales_por_campo=UMBRALES_POR_CAMPO,
     )
     if sugerencias:
         aceptados["_sugerencias"] = sugerencias
     return aceptados
-
-def buscar_aforo_especifico(nombre_sala, ciudad):
-    """
-    Realiza una búsqueda en DuckDuckGo dirigida a encontrar el aforo o capacidad del local
-    y lo extrae usando Gemini.
-    """
-    query = f"{nombre_sala} {ciudad} aforo capacidad personas"
-    print(f"[scout.py] Buscando aforo específico con query: '{query}'...")
-    resultados = obtener_resultados_busqueda(query, max_results=5)
-    if not resultados:
-        return None
-        
-    res_str = ""
-    for idx, r in enumerate(resultados, 1):
-        res_str += f"[{idx}] Título: {r.get('title')}\n    Snippet: {r.get('body')}\n\n"
-        
-    prompt = (
-        f"Analiza los siguientes snippets de resultados de búsqueda para encontrar el aforo, capacidad máxima de personas o limitación de espacio de la sala de conciertos '{nombre_sala}' en '{ciudad}':\n\n"
-        f"{res_str}\n"
-        "Reglas:\n"
-        "1. Extrae únicamente el número entero que representa la capacidad de personas (ej. si dice 'aforo de 300 personas', devuelve 300).\n"
-        "2. Si hay múltiples espacios con distintos aforos, selecciona el principal o el de la sala de conciertos.\n"
-        "3. Devuelve únicamente el número entero en texto plano. Si no se menciona ningún aforo o capacidad numérica razonable, devuelve únicamente 'NULL'."
-    )
-    
-    try:
-        ans = gemini_client.generar_texto_gemini(
-            prompt=prompt,
-            model_name="gemini-2.5-flash",
-            temperature=0.1
-        )
-        if ans:
-            ans_clean = ans.strip().upper()
-            if "NULL" in ans_clean:
-                return None
-            digits = "".join(c for c in ans_clean if c.isdigit())
-            if digits:
-                return int(digits)
-        return None
-    except Exception as e:
-        print(f"[scout.py] Error al extraer aforo específico: {e}")
-        return None
-
-def buscar_genero_especifico(nombre_sala, ciudad, tipo):
-    """
-    Realiza una búsqueda en DuckDuckGo dirigida a encontrar el estilo/género musical principal
-    que programa la sala o festival y lo extrae con Gemini.
-    """
-    if tipo == "ayuntamiento":
-        return "Varios / Festivo"
-        
-    query = f"{nombre_sala} {ciudad} estilo musical programación conciertos género"
-    print(f"[scout.py] Buscando género específico con query: '{query}'...")
-    resultados = obtener_resultados_busqueda(query, max_results=5)
-    if not resultados:
-        return None
-        
-    res_str = ""
-    for idx, r in enumerate(resultados, 1):
-        res_str += f"[{idx}] Título: {r.get('title')}\n    Snippet: {r.get('body')}\n\n"
-        
-    prompt = (
-        f"Analiza los siguientes snippets de resultados de búsqueda para determinar qué estilo o género de música (ej: Rock, Indie, Electrónica, Jazz, Pop, etc.) se programa habitualmente en la entidad '{nombre_sala}' en '{ciudad}':\n\n"
-        f"{res_str}\n"
-        "Reglas:\n"
-        "1. Identifica el género o géneros musicales dominantes (ej: 'Rock / Indie', 'Jazz', 'Electrónica / Techno', 'Pop').\n"
-        "2. Sé breve y conciso (máximo 3 palabras).\n"
-        "3. Si los resultados son ambiguos o no mencionan estilos de música concretos, devuelve 'Varios' o 'N/A'.\n"
-        "4. Devuelve únicamente la respuesta en texto plano sin markdown, sin comillas ni explicaciones."
-    )
-    
-    try:
-        ans = gemini_client.generar_texto_gemini(
-            prompt=prompt,
-            model_name="gemini-2.5-flash",
-            temperature=0.2
-        )
-        if ans:
-            ans_clean = ans.strip()
-            if len(ans_clean) < 45:
-                return ans_clean
-        return None
-    except Exception as e:
-        print(f"[scout.py] Error al extraer género específico: {e}")
-        return None
 
 def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
     """
@@ -478,129 +423,91 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
             
         print(f"\n[scout.py] >>> Procesando '{nombre_sala}' ({ciudad}) [Tipo: {tipo}] [ID: {lead_id}]")
         
-        # 1. Búsqueda principal en DuckDuckGo y extracción desde snippets
+        # Acumulador de datos aceptados (ya filtrados por confianza en cada extractor).
+        # Primera fuente que aporta un dato válido gana; _combinar no sobrescribe.
+        datos = {}
+        # Datos de confianza insuficiente: se juntan aquí para dejarlos en 'notas' como pistas
+        # a verificar, nunca en los campos verificados de la Sheet.
+        sugerencias_totales = []
+        CAMPOS = ["email", "telefono", "instagram", "website", "genero", "aforo"]
+
+        # 1. Una única búsqueda amplia + extracción estructurada desde snippets.
+        # Antes había hasta 4 búsquedas y 6 llamadas a la IA por lead; ahora arrancamos con 1
+        # de cada y solo profundizamos si falta el dato crítico (email).
         if tipo == "ayuntamiento":
-            query_busqueda = f"{nombre_sala} concejalía festejos cultura contacto email"
+            query_busqueda = f"{nombre_sala} concejalía festejos cultura contacto email telefono"
         elif tipo == "festival":
-            query_busqueda = f"{nombre_sala} contacto booking contratacion email"
+            query_busqueda = f"{nombre_sala} contacto booking contratacion email telefono"
         else:
-            query_busqueda = f"{nombre_sala} {ciudad} web oficial contacto email telefono"
-            
+            query_busqueda = f"{nombre_sala} {ciudad} web oficial contacto email telefono aforo"
+
         results = obtener_resultados_busqueda(query_busqueda, max_results=8)
         datos_snippets = extraer_datos_contacto_de_snippets(nombre_sala, ciudad, results, tipo=tipo)
+        sugerencias_totales.extend(datos_snippets.get("_sugerencias") or [])
+        _combinar(datos, datos_snippets, CAMPOS)
 
-        # Acumula los datos de confianza media/baja que la IA no dio por seguros, para
-        # dejarlos en 'notas' como pistas a verificar en vez de escribirlos como verificados.
-        sugerencias_totales = list(datos_snippets.get("_sugerencias") or [])
+        # 2. Si la web es standalone (no red social), descargamos su HTML: es la mejor fuente
+        # de aforo y género (datos que rara vez salen en un snippet).
+        web = datos.get("website")
+        is_social = bool(web) and any(
+            s in web.lower() for s in ["facebook.com", "instagram.com", "twitter.com", "x.com", "linkedin.com"]
+        )
 
-        email = datos_snippets.get("email")
-        telefono = datos_snippets.get("telefono")
-        instagram = datos_snippets.get("instagram")
-        web = datos_snippets.get("website")
-        genero = datos_snippets.get("genero")
-        aforo = None
-        
-        # 2. Si conseguimos una web que sea standalone (no facebook/instagram),
-        # intentamos descargar su HTML para extraer más detalles (especialmente aforo y género)
-        web_descargable = web
-        is_social = False
-        if web_descargable:
-            web_lower = web_descargable.lower()
-            if any(social in web_lower for social in ["facebook.com", "instagram.com", "twitter.com", "x.com", "linkedin.com"]):
-                is_social = True
-                
-        if web_descargable and not is_social:
-            print(f"[scout.py] Intentando descargar web oficial: {web_descargable}")
-            texto_home, paginas_contacto = descargar_texto_pagina(web_descargable)
-            
+        if web and not is_social:
+            print(f"[scout.py] Intentando descargar web oficial: {web}")
+            texto_home, paginas_contacto = descargar_texto_pagina(web)
+
             if texto_home:
-                datos_web = extraer_datos_contacto(texto_home, web_descargable, tipo=tipo)
+                datos_web = extraer_datos_contacto(texto_home, web, tipo=tipo)
                 sugerencias_totales.extend(datos_web.get("_sugerencias") or [])
+                _combinar(datos, datos_web, CAMPOS)
 
-                # Combinar datos
-                if datos_web.get("email") and not email:
-                    email = datos_web["email"]
-                if datos_web.get("telefono") and not telefono:
-                    telefono = datos_web["telefono"]
-                if datos_web.get("instagram") and not instagram:
-                    instagram = datos_web["instagram"]
-                if datos_web.get("genero") and not genero:
-                    genero = datos_web["genero"]
-                if datos_web.get("aforo"):
-                    aforo = datos_web["aforo"]
-                    
-                # Si no hay email, intentar en página de contacto
-                if not email and paginas_contacto:
+                # Profundizamos en la página de contacto solo si aún falta email o aforo
+                # (el email es crítico; el aforo casi siempre vive en "el local"/"sobre nosotros").
+                if (not datos.get("email") or not datos.get("aforo")) and paginas_contacto:
                     url_contacto = paginas_contacto[0]
                     print(f"[scout.py] Buscando en página de contacto: {url_contacto}")
                     texto_contacto, _ = descargar_texto_pagina(url_contacto)
                     datos_contacto = extraer_datos_contacto(texto_contacto, url_contacto, tipo=tipo)
                     sugerencias_totales.extend(datos_contacto.get("_sugerencias") or [])
-
-                    if datos_contacto.get("email") and not email:
-                        email = datos_contacto["email"]
-                    if datos_contacto.get("telefono") and not telefono:
-                        telefono = datos_contacto["telefono"]
-                    if datos_contacto.get("instagram") and not instagram:
-                        instagram = datos_contacto["instagram"]
-                    if datos_contacto.get("genero") and not genero:
-                        genero = datos_contacto["genero"]
-                    if datos_contacto.get("aforo") and not aforo:
-                        aforo = datos_contacto["aforo"]
+                    _combinar(datos, datos_contacto, CAMPOS)
+        elif is_social:
+            print(f"[scout.py] Canal oficial es red social ({web}), omitiendo scraping directo.")
         else:
-            if is_social:
-                print(f"[scout.py] Canal oficial es red social ({web_descargable}), omitiendo scraping directo.")
-            else:
-                print(f"[scout.py] No se encontró web oficial standalone para descargar.")
- 
-        # 3. Fallback: Si sigue faltando email o teléfono, buscamos snippets con query más específica
-        if not email or not telefono:
-            print(f"[scout.py] Fallback: buscando específicamente datos de contacto para '{nombre_sala}'...")
+            print(f"[scout.py] No se encontró web oficial standalone para descargar.")
+
+        # 3. Fallback dirigido: solo si sigue faltando el email (el único dato imprescindible).
+        # No gastamos una búsqueda extra por un teléfono o un instagram que faltan.
+        if not datos.get("email"):
+            print(f"[scout.py] Fallback: buscando específicamente el email de contacto de '{nombre_sala}'...")
             if tipo == "ayuntamiento":
                 query_fallback = f"{nombre_sala} concejalía cultura correo electrónico"
             elif tipo == "festival":
                 query_fallback = f"{nombre_sala} enviar propuesta artistas mail"
             else:
                 query_fallback = f"{nombre_sala} {ciudad} contacto email correo telefono"
-                
+
             results_fallback = obtener_resultados_busqueda(query_fallback, max_results=8)
-            
             if results_fallback:
                 datos_fallback = extraer_datos_contacto_de_snippets(nombre_sala, ciudad, results_fallback, tipo=tipo)
                 sugerencias_totales.extend(datos_fallback.get("_sugerencias") or [])
-                if datos_fallback.get("email") and not email:
-                    email = datos_fallback["email"]
-                if datos_fallback.get("telefono") and not telefono:
-                    telefono = datos_fallback["telefono"]
-                if datos_fallback.get("instagram") and not instagram:
-                    instagram = datos_fallback["instagram"]
-                if datos_fallback.get("website") and not web:
-                    web = datos_fallback["website"]
-                if datos_fallback.get("genero") and not genero:
-                    genero = datos_fallback["genero"]
-                    
-        # 3.5 Búsquedas ultra-dirigidas de aforo y género si siguen vacíos
-        if not aforo or int(aforo or 0) == 0:
-            aforo_especifico = buscar_aforo_especifico(nombre_sala, ciudad)
-            if aforo_especifico:
-                aforo = aforo_especifico
-                
-        if not genero or genero.strip().lower() in ["", "varios", "n/a", "null"]:
-            genero_especifico = buscar_genero_especifico(nombre_sala, ciudad, tipo)
-            if genero_especifico:
-                genero = genero_especifico
+                _combinar(datos, datos_fallback, CAMPOS)
 
         # 4. Formatear y guardar los resultados
-        email = email.strip() if (email and isinstance(email, str)) else None
-        telefono = telefono.strip() if (telefono and isinstance(telefono, str)) else None
-        instagram = instagram.strip() if (instagram and isinstance(instagram, str)) else None
-        web = web.strip() if (web and isinstance(web, str)) else None
-        genero = genero.strip() if (genero and isinstance(genero, str)) else None
-        
+        def _limpiar(v):
+            return v.strip() if isinstance(v, str) else v
+
+        email = _limpiar(datos.get("email"))
+        telefono = _limpiar(datos.get("telefono"))
+        instagram = _limpiar(datos.get("instagram"))
+        web = _limpiar(datos.get("website"))
+        genero = _limpiar(datos.get("genero"))
+        aforo = datos.get("aforo")
+
         # Validar formato básico de email
         if email and "@" not in email:
             email = None
-            
+
         if email or telefono or instagram or web or genero:
             print(f"[scout.py] [SUCCESS] Datos encontrados - Email: {email or 'N/A'}, Teléfono: {telefono or 'N/A'}, Instagram: {instagram or 'N/A'}, Web: {web or 'N/A'}, Género: {genero or 'N/A'}")
             

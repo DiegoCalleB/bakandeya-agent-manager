@@ -1,0 +1,52 @@
+name: Ejecución de Agentes Bakandeya On-Demand
+
+on:
+  # Permite que nuestra aplicación web lance este workflow externamente
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: 'Nombre del agente a ejecutar (scout, redactor, enviador, lector)'
+        required: true
+        type: string
+      extra_args:
+        description: 'Argumentos adicionales para el script de Python'
+        required: false
+        type: string
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout de código
+        uses: actions/checkout@v3
+
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-level: '3.10'
+          cache: 'pip'
+
+      - name: Instalar dependencias
+        run: |
+          pip install -r requirements.txt
+
+      - name: Ejecutar Agente de Bakandeya
+        env:
+          # Inyecta aquí las credenciales que usen vuestros agentes de Python (como Google Sheets)
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: |
+          # Determina qué script lanzar según la entrada recibida
+          if [ "${{ github.event.inputs.agent }}" = "scout" ]; then
+            python agents/larra_sync.py ${{ github.event.inputs.extra_args }}
+          elif [ "${{ github.event.inputs.agent }}" = "redactor" ]; then
+            python agents/redactor.py ${{ github.event.inputs.extra_args }}
+          elif [ "${{ github.event.inputs.agent }}" = "enviador" ]; then
+            python agents/enviador.py ${{ github.event.inputs.extra_args }}
+          elif [ "${{ github.event.inputs.agent }}" = "lector" ]; then
+            python agents/lector.py ${{ github.event.inputs.extra_args }}
+          else
+            echo "Agente desconocido: ${{ github.event.inputs.agent }}"
+            exit 1
+          fi

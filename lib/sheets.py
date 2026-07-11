@@ -9,8 +9,42 @@ DOCUMENTO_SHEETS = os.getenv("GOOGLE_SHEETS_DOCUMENT", "Bakandeya Leads")
 
 def obtener_cliente_sheets():
     """
-    Autentica con la Service Account de Google Sheets.
+    Autentica con la Service Account de Google Sheets, ya sea usando el archivo
+    en GOOGLE_APPLICATION_CREDENTIALS o construyendo las credenciales dinámicamente
+    desde las variables de entorno si están disponibles (ideal para GitHub Actions).
     """
+    # 1. Intentar con variables de entorno individuales (evita depender de archivos físicos en CI)
+    email = os.getenv("GOOGLE_SERVICE_ACCOUNT_EMAIL")
+    private_key = os.getenv("GOOGLE_PRIVATE_KEY")
+    
+    if email and private_key:
+        try:
+            # Limpiar la clave privada (reemplazar saltos de línea literales \n por reales)
+            clean_key = private_key.replace("\\n", "\n").replace("\n", "\n")
+            # Si contiene saltos de línea reales escapados, los normalizamos
+            if "\\n" in clean_key:
+                clean_key = clean_key.replace("\\n", "\n")
+            
+            # Asegurar que los delimitadores PEM estén presentes
+            if "-----BEGIN PRIVATE KEY-----" not in clean_key:
+                # Si viene en formato simple, recomponer
+                clean_key = "-----BEGIN PRIVATE KEY-----\n" + clean_key.replace(" ", "\n") + "\n-----END PRIVATE KEY-----"
+            
+            info = {
+                "type": "service_account",
+                "project_id": "bakandeya-booking",
+                "private_key": clean_key,
+                "client_email": email,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{email}"
+            }
+            return gspread.service_account_from_dict(info)
+        except Exception as e:
+            print(f"[sheets.py] Fallo de autenticación directa con diccionario: {e}. Probando método tradicional...")
+            
+    # 2. Método tradicional por archivo
     credenciales_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     if not credenciales_path:
         raise ValueError("La variable de entorno GOOGLE_APPLICATION_CREDENTIALS no está configurada")

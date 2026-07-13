@@ -1,0 +1,45 @@
+name: Agente de Seguimiento
+
+on:
+  schedule:
+    # Se ejecuta todos los lunes a las 09:00 UTC (11:00 AM hora de Madrid en verano, 10:00 AM en invierno)
+    - cron: "0 9 * * 1"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  followup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v6
+
+      - name: Configurar Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Escribir credenciales de la cuenta de servicio de Google
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: echo "$GOOGLE_SERVICE_ACCOUNT_JSON" > credentials_service_account.json
+
+      - name: Ejecutar Agente de Seguimiento
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: credentials_service_account.json
+          GOOGLE_SHEETS_DOCUMENT: "Bakandeya Leads"
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GMAIL_CREDENTIALS_PATH: credentials.json
+          GMAIL_TOKEN_PATH: token.json
+        run: |
+          echo '${{ secrets.GMAIL_CREDENTIALS_JSON }}' > credentials.json
+          echo '${{ secrets.GMAIL_TOKEN_JSON }}' > token.json
+          python agents/seguimiento.py

@@ -72,4 +72,16 @@ def transicionar(lead, nuevo_estado, notas=None, pitch=None):
         return False
 
     print(f"[estados] {lead_id}: {estado_actual} -> {nuevo_estado}")
+    
+    # Si pasa a ESPERANDO, también registramos la fecha de envío actual automáticamente
+    if nuevo_estado == ESPERANDO:
+        from datetime import datetime
+        fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+        datos = {"estado": nuevo_estado, "fecha_envio": fecha_hoy}
+        if pitch is not None:
+            datos["pitch_generado"] = pitch
+        if notas is not None:
+            datos["notas"] = notas
+        return sheets.actualizar_datos_lead(lead_id, datos)
+        
     return sheets.actualizar_estado_lead(lead_id, nuevo_estado, pitch=pitch, notas=notas)

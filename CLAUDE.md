@@ -37,6 +37,7 @@ Cuatro agentes, ejecutados por cron vía GitHub Actions (nunca un servidor 24h e
 | `enviador.py` | `aprobado` | `esperando_respuesta` | diario 09:30 |
 | `lector_bandeja.py` | `esperando_respuesta` | `interesado` / `no_interesado` / `negociando` | cada 2h |
 | `monitor_redes.py` | — (fuentes externas) | `metricas` (Google Sheet) | quincenal (días 1 y 15, 08:00) |
+| `seguimiento.py` | `esperando_respuesta` (>=10 días) | `esperando_respuesta` + notas | semanal (lunes 09:00) |
 
 **Orden de construcción: Redactor → Gmail (enviador + OAuth) → Scout.** Scout es el más
 arriesgado (no existe una API de "todas las salas"; requiere semilla manual + búsqueda +
@@ -75,7 +76,8 @@ bakandeya-agent-manager/
 │   ├── redactor.py
 │   ├── enviador.py
 │   ├── lector_bandeja.py
-│   └── monitor_redes.py
+│   ├── monitor_redes.py
+│   └── seguimiento.py
 ├── lib/
 │   ├── sheets.py          # conexión y helpers de la Google Sheet
 │   ├── gmail_client.py    # OAuth, enviar, leer
@@ -88,7 +90,8 @@ bakandeya-agent-manager/
 │   ├── redactor.yml
 │   ├── enviador.yml
 │   ├── lector_bandeja.yml
-│   └── monitor_redes.yml
+│   ├── monitor_redes.yml
+│   └── seguimiento.yml
 └── tests/
 ```
 
@@ -105,7 +108,7 @@ bakandeya-agent-manager/
 | `fuente` | string | de dónde salió el contacto (para auditar) |
 | `estado` | string | `nuevo` / `pendiente_aprobacion` / `aprobado` / `enviado` / `esperando_respuesta` / `interesado` / `no_interesado` / `negociando` / `descartado` |
 | `pitch_generado` | text | output del Redactor |
-| `fecha_envio` | date | |
+| `fecha_envio` | date | fecha del último envío/borrador, autogenerada por `estados.py` |
 | `fecha_ultima_respuesta` | date | |
 | `notas` | text | |
 
@@ -159,6 +162,7 @@ _(Actualizar esta sección a medida que avance)_
 - [x] Máquina de estados (`lib/estados.py`) con grafo de transiciones válidas y soporte para regeneración de pitches
 - [x] Workflows de GitHub Actions configurados con los secretos del repositorio
 - [x] Agente de monitorización de redes sociales (`monitor_redes.py` + workflow quincenal) funcionando
+- [x] Agente de seguimiento automático (`seguimiento.py` + workflow semanal + auto fecha_envio) funcionando
 - [ ] Primeras pruebas con salas reales (envío de los primeros borradores aprobados)
 
 > **Documentación:** el funcionamiento completo del sistema (arquitectura basada en estado,

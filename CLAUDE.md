@@ -38,6 +38,7 @@ Cuatro agentes, ejecutados por cron vía GitHub Actions (nunca un servidor 24h e
 | `lector_bandeja.py` | `esperando_respuesta` | `interesado` / `no_interesado` / `negociando` | cada 2h |
 | `monitor_redes.py` | — (fuentes externas) | `metricas` (Google Sheet) | quincenal (días 1 y 15, 08:00) |
 | `seguimiento.py` | `esperando_respuesta` (>=10 días) | `esperando_respuesta` + notas | semanal (lunes 09:00) |
+| `reporte_semanal.py` | `leads` + `metricas` | Telegram (notificación) | semanal (domingo 18:00) |
 
 **Orden de construcción: Redactor → Gmail (enviador + OAuth) → Scout.** Scout es el más
 arriesgado (no existe una API de "todas las salas"; requiere semilla manual + búsqueda +
@@ -77,7 +78,8 @@ bakandeya-agent-manager/
 │   ├── enviador.py
 │   ├── lector_bandeja.py
 │   ├── monitor_redes.py
-│   └── seguimiento.py
+│   ├── seguimiento.py
+│   └── reporte_semanal.py
 ├── lib/
 │   ├── sheets.py          # conexión y helpers de la Google Sheet
 │   ├── gmail_client.py    # OAuth, enviar, leer
@@ -91,7 +93,8 @@ bakandeya-agent-manager/
 │   ├── enviador.yml
 │   ├── lector_bandeja.yml
 │   ├── monitor_redes.yml
-│   └── seguimiento.yml
+│   ├── seguimiento.yml
+│   └── reporte_semanal.yml
 └── tests/
 ```
 
@@ -163,6 +166,7 @@ _(Actualizar esta sección a medida que avance)_
 - [x] Workflows de GitHub Actions configurados con los secretos del repositorio
 - [x] Agente de monitorización de redes sociales (`monitor_redes.py` + workflow quincenal) funcionando
 - [x] Agente de seguimiento automático (`seguimiento.py` + workflow semanal + auto fecha_envio) funcionando
+- [x] Agente de reporte semanal (`reporte_semanal.py` + workflow semanal) funcionando
 - [ ] Primeras pruebas con salas reales (envío de los primeros borradores aprobados)
 
 > **Documentación:** el funcionamiento completo del sistema (arquitectura basada en estado,

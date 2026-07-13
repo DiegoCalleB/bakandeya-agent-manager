@@ -1,0 +1,39 @@
+name: Reporte Semanal
+
+on:
+  schedule:
+    # Se ejecuta todos los domingos a las 18:00 UTC (20:00 PM hora de Madrid en verano, 19:00 PM en invierno)
+    - cron: "0 18 * * 0"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v6
+
+      - name: Configurar Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Escribir credenciales de la cuenta de servicio de Google
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: echo "$GOOGLE_SERVICE_ACCOUNT_JSON" > credentials_service_account.json
+
+      - name: Ejecutar Reporte Semanal
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: credentials_service_account.json
+          GOOGLE_SHEETS_DOCUMENT: "Bakandeya Leads"
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python agents/reporte_semanal.py

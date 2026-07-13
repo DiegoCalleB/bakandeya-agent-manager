@@ -16,7 +16,6 @@ try:
     import truststore
 
     truststore.inject_into_ssl()
-except ImportError:
-    # Sin truststore instalado (p. ej. en CI) se usa el comportamiento por defecto (certifi).
-    # No es un error fatal: solo se pierde la compatibilidad con el proxy corporativo.
+except (ImportError, AttributeError):
+    # Sin truststore instalado o si hay incompatibilidad de urllib3, se usa certifi.
     pass

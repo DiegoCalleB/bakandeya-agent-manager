@@ -36,6 +36,7 @@ Cuatro agentes, ejecutados por cron vía GitHub Actions (nunca un servidor 24h e
 | `redactor.py` | `nuevo` | `pendiente_aprobacion` | diario 09:00 |
 | `enviador.py` | `aprobado` | `esperando_respuesta` | diario 09:30 |
 | `lector_bandeja.py` | `esperando_respuesta` | `interesado` / `no_interesado` / `negociando` | cada 2h |
+| `monitor_redes.py` | — (fuentes externas) | `metricas` (Google Sheet) | quincenal (días 1 y 15, 08:00) |
 
 **Orden de construcción: Redactor → Gmail (enviador + OAuth) → Scout.** Scout es el más
 arriesgado (no existe una API de "todas las salas"; requiere semilla manual + búsqueda +
@@ -73,7 +74,8 @@ bakandeya-agent-manager/
 │   ├── scout.py
 │   ├── redactor.py
 │   ├── enviador.py
-│   └── lector_bandeja.py
+│   ├── lector_bandeja.py
+│   └── monitor_redes.py
 ├── lib/
 │   ├── sheets.py          # conexión y helpers de la Google Sheet
 │   ├── gmail_client.py    # OAuth, enviar, leer
@@ -85,7 +87,8 @@ bakandeya-agent-manager/
 │   ├── scout.yml
 │   ├── redactor.yml
 │   ├── enviador.yml
-│   └── lector_bandeja.yml
+│   ├── lector_bandeja.yml
+│   └── monitor_redes.yml
 └── tests/
 ```
 
@@ -105,6 +108,16 @@ bakandeya-agent-manager/
 | `fecha_envio` | date | |
 | `fecha_ultima_respuesta` | date | |
 | `notas` | text | |
+
+### Esquema de la Google Sheet (hoja `metricas`)
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `fecha` | date | `YYYY-MM-DD` |
+| `instagram` | int | número de seguidores |
+| `tiktok` | int | número de seguidores |
+| `youtube` | int | número de suscriptores |
+| `notas` | string | detalle de la actualización (ej: "Registro automático") |
 
 ## Reglas innegociables (no las rompas aunque Diego tenga prisa)
 
@@ -145,6 +158,7 @@ _(Actualizar esta sección a medida que avance)_
 - [x] `lector_bandeja.py` funcionando (clasifica con Gemini Flash)
 - [x] Máquina de estados (`lib/estados.py`) con grafo de transiciones válidas y soporte para regeneración de pitches
 - [x] Workflows de GitHub Actions configurados con los secretos del repositorio
+- [x] Agente de monitorización de redes sociales (`monitor_redes.py` + workflow quincenal) funcionando
 - [ ] Primeras pruebas con salas reales (envío de los primeros borradores aprobados)
 
 > **Documentación:** el funcionamiento completo del sistema (arquitectura basada en estado,

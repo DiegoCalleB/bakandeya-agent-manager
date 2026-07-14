@@ -364,17 +364,39 @@ def extraer_datos_contacto(texto, url_origen, tipo="sala"):
 
 def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
     """
-    Busca leads en la Google Sheet en estado 'nuevo' que tengan datos incompletos
-    (falta de email, teléfono, website o instagram) y los enriquece de forma exhaustiva.
+    Busca leads en la Google Sheet que tengan datos incompletos (especialmente email_contacto)
+    y los enriquece de forma exhaustiva.
+    
+    Si se busca por región (ej. manual/chatbot), permite cargar leads en estados:
+      - nuevo (si le falta email, teléfono, web o instagram)
+      - pendiente_aprobacion (solo si le falta el email de contacto)
+      - sin_contacto (para reintentar enriquecimiento, solo si le falta el email)
+    Si no hay filtro de región (cron rutinario):
+      - nuevo (si le falta algún dato de contacto)
+      - pendiente_aprobacion (solo si le falta el email)
     """
     print("[scout.py] Iniciando proceso de enriquecimiento de leads...")
-    leads = sheets.obtener_leads(estado=estados.NUEVO)
+    
+    if region:
+        # Cargar todos los leads e incluir los estados correspondientes
+        leads_todos = sheets.obtener_leads()
+        estados_permitidos = [estados.NUEVO, estados.PENDIENTE, estados.SIN_CONTACTO]
+        leads = [l for l in leads_todos if l.get("estado") in estados_permitidos]
+    else:
+        # Cargar sólo 'nuevo' y 'pendiente_aprobacion' si carece de email
+        leads_nuevos = sheets.obtener_leads(estado=estados.NUEVO)
+        leads_todos = sheets.obtener_leads()
+        leads_pendientes_sin_email = [
+            l for l in leads_todos 
+            if l.get("estado") == estados.PENDIENTE and not l.get("email_contacto")
+        ]
+        leads = leads_nuevos + leads_pendientes_sin_email
     
     if region:
         leads = [l for l in leads if (l.get("region") and region.lower() in str(l.get("region")).lower()) or (l.get("ciudad") and region.lower() in str(l.get("ciudad")).lower())]
-        print(f"[scout.py] Filtrando leads en estado 'nuevo' para la región/ciudad: '{region}'. Encontrados: {len(leads)}")
+        print(f"[scout.py] Filtrando leads para la región/ciudad: '{region}'. Encontrados: {len(leads)}")
         
-    # Filtrar leads a los que les falte algún dato clave
+    # Filtrar leads a los que les falte algún dato clave según su estado
     leads_incompletos = []
     for l in leads:
         falta_email = not l.get("email_contacto")
@@ -382,8 +404,14 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
         falta_web = not l.get("website")
         falta_insta = not l.get("instagram")
         
-        if falta_email or falta_tel or falta_web or falta_insta:
-            leads_incompletos.append(l)
+        # Para leads 'nuevo', enriquecemos si falta cualquier dato básico de contacto
+        if l.get("estado") == estados.NUEVO:
+            if falta_email or falta_tel or falta_web or falta_insta:
+                leads_incompletos.append(l)
+        # Para leads 'pendiente_aprobacion' o 'sin_contacto', enriquecemos solo si les falta el email de contacto (crítico)
+        else:
+            if falta_email:
+                leads_incompletos.append(l)
             
     print(f"[scout.py] Se encontraron {len(leads_incompletos)} leads incompletos a procesar.")
     

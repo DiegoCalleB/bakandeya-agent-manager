@@ -165,7 +165,8 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
             "2. telefono: El teléfono oficial de contacto de las oficinas del ayuntamiento.\n"
             "3. instagram: El usuario de Instagram oficial del ayuntamiento o de su concejalía de cultura (ej: @nombre o nombre_usuario).\n"
             "4. website: El enlace a la web oficial del ayuntamiento o portal de festejos/turismo.\n"
-            "5. genero: Pon siempre 'Varios / Festivo'."
+            "5. genero: Pon siempre 'Varios / Festivo'.\n"
+            "6. aforo: Pon siempre null."
         )
     elif tipo == "festival":
         objetivo_contacto = (
@@ -174,7 +175,8 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
             "2. telefono: El teléfono oficial de contacto del festival/organización.\n"
             "3. instagram: El usuario de Instagram oficial del festival (ej: @nombre o nombre_usuario).\n"
             "4. website: El enlace a la web oficial del festival.\n"
-            "5. genero: El estilo o género musical predominante del festival (ej: 'Indie / Pop', 'Electrónica', 'Folk', etc.)."
+            "5. genero: El estilo o género musical predominante del festival (ej: 'Indie / Pop', 'Electrónica', 'Folk', etc.).\n"
+            "6. aforo: La capacidad o aforo del recinto del festival (número entero, o null si no se menciona)."
         )
     else:
         objetivo_contacto = (
@@ -183,7 +185,8 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
             "2. telefono: El teléfono de contacto oficial.\n"
             "3. instagram: El usuario de Instagram (ej: @nombre o nombre_usuario).\n"
             "4. website: El enlace a su canal oficial real (puede ser su web oficial .com/.es, o su página oficial de Facebook o de Instagram si no tiene web independiente).\n"
-            "5. genero: El estilo o género musical habitual de la sala (ej: 'Rock / Indie', 'Jazz / Blues', 'Comercial / Pop', 'Varios', etc.)."
+            "5. genero: El estilo o género musical habitual de la sala, indicando los estilos predominantes específicos si se mencionan en los resultados (ej: 'Rock / Metal', 'Balkan / Ska / Reggae', 'Indie Pop', etc. Evita poner simplemente 'Varios' a menos que no exista otra información).\n"
+            "6. aforo: El aforo de la sala (capacidad máxima de personas) si se menciona en los resultados (número entero, o null si no se menciona)."
         )
 
     prompt = (
@@ -204,7 +207,8 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
         "  \"telefono\":  {\"valor\": \"telefono o null\",  \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
         "  \"instagram\": {\"valor\": \"instagram o null\", \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
         "  \"website\":   {\"valor\": \"url o null\",       \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
-        "  \"genero\":    {\"valor\": \"genero o null\",    \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"}\n"
+        "  \"genero\":    {\"valor\": \"genero o null\",    \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
+        "  \"aforo\":     {\"valor\": \"aforo o null\",     \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"}\n"
         "}"
     )
 
@@ -224,7 +228,7 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
         return {}
 
     aceptados, sugerencias = _procesar_campos_extraidos(
-        data, campos=["email", "telefono", "instagram", "website", "genero"],
+        data, campos=["email", "telefono", "instagram", "website", "genero", "aforo"],
         umbrales_por_campo=UMBRALES_POR_CAMPO,
     )
     if sugerencias:
@@ -303,13 +307,13 @@ def extraer_datos_contacto(texto, url_origen, tipo="sala"):
         objetivo_contacto = (
             "1. Para el aforo: busca la capacidad del recinto del festival o asistencia estimada. Si es numérico ponlo como integer, si no pon null.\n"
             "2. Para el email: extrae el correo de contratación, booking, propuestas artísticas, producción o el de información general.\n"
-            "3. Para el genero: extrae o infiere el estilo musical predominante del festival."
+            "3. Para el genero: extrae o infiere el estilo musical predominante del festival, indicando los géneros específicos (ej: 'Indie Pop', 'Folk Rock', etc.)."
         )
     else:
         objetivo_contacto = (
             "1. Para el aforo: busca menciones del tamaño de la sala, capacidad, limitación de personas o aforo. Si es numérico ponlo como integer, si no pon null.\n"
             "2. Para el email: extrae solo correos corporativos o de contacto profesional de la sala (ej: programacion@..., info@..., contacto@...).\n"
-            "3. Para el genero: extrae o infiere el estilo o género musical habitual de la sala (ej: 'Rock / Indie', 'Metal', 'Jazz', etc.)."
+            "3. Para el genero: extrae o infiere el estilo o género musical habitual de la sala, detallando los estilos predominantes de forma específica (ej: 'Rock / Metal', 'Balkan / Ska / Reggae', 'Electrónica / Techno', etc. Evita poner 'Varios' a menos que no exista otra información)."
         )
 
     prompt = (

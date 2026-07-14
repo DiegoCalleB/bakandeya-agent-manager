@@ -1,39 +1,11 @@
-
-steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      # 🔑 ESTE ES EL PASO QUE DEBES AÑADIR:
-      - name: Create Google Credentials File
-        run: |
-          echo '${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}' > /tmp/google_creds.json
-
-      # 🚀 Y en el paso donde ejecutas tus agentes, pasa la variable apuntando a ese archivo:
-      - name: Run Bakandeya Agent
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_creds.json
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          EMAIL_USER: ${{ secrets.EMAIL_USER }}
-          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-        run: |
-          # Aquí va tu script actual:
-          # 1. Determinar qué agente disparar...
-          # 2. Enrutador inteligente para tus scripts de agents/...
-
-
 name: Run Python Agents
 
 on:
-  # Permite el disparo automático por tiempo (Cron) si lo necesitas
+  # Permite el disparo automático por tiempo (Cron)
   schedule:
-    - cron: '0 9 * * *' # Corre todos los días a las 09:00 UTC (por ejemplo)
+    - cron: '0 9 * * *' # Corre todos los días a las 09:00 UTC
     
-  # Permite que la app del panel de control lo despierte en directo con parámetros
+  # Permite que la aplicación web lo active en directo con parámetros
   workflow_dispatch:
     inputs:
       agent:
@@ -48,7 +20,7 @@ on:
           - enviador
           - lector
       extra_args:
-        description: 'Argumentos adicionales para el script de Python (ej: --region Andalucía)'
+        description: 'Argumentos adicionales para el script de Python (ej: --region Navarra --tipo sala)'
         required: false
         default: ''
         type: string
@@ -72,15 +44,20 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
+      # 🔑 1. Crea el archivo físico de credenciales a partir de tu secreto de GitHub
+      - name: Crear archivo de credenciales de Google
+        run: |
+          echo '${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}' > /tmp/google_creds.json
+
+      # 🚀 2. Ejecuta el Agente pasando la variable de entorno apuntando al archivo temporal
       - name: Ejecutar Agente de Bakandeya
         env:
-          # Aquí van las credenciales que usan tus scripts de Python
-          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_creds.json
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
         run: |
-          # 1. Determinar qué agente disparar (por input manual/API o fallback de schedule)
+          # Determinar qué agente disparar (por input manual/API o fallback de schedule)
           AGENT="${{ github.event.inputs.agent }}"
           ARGS="${{ github.event.inputs.extra_args }}"
           
@@ -92,7 +69,7 @@ jobs:
           echo "Iniciando ejecución de agente: $AGENT"
           echo "Argumentos adicionales: $ARGS"
 
-          # 2. Enrutador inteligente para tus scripts de agents/
+          # Enrutador inteligente para tus scripts de agents/
           if [ "$AGENT" = "scout" ]; then
             python agents/scout.py $ARGS
           elif [ "$AGENT" = "scout_descubridor" ]; then

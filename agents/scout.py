@@ -522,9 +522,16 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
         sugerencias_totales.extend(datos_snippets.get("_sugerencias") or [])
         _combinar(datos, datos_snippets, CAMPOS)
 
-        # 2. Si la web es standalone (no red social), descargamos su HTML: es la mejor fuente
-        # de aforo y género (datos que rara vez salen en un snippet).
+        # 2. Si no se encontró la web oficial en los snippets amplios, la buscamos de manera dedicada
         web = datos.get("website")
+        if not web:
+            print(f"[scout.py] Web no encontrada en snippets. Buscando web oficial de forma dedicada...")
+            web = buscar_web_sala(nombre_sala, ciudad)
+            if web:
+                datos["website"] = web
+
+        # 3. Si la web es standalone (no red social), descargamos su HTML: es la mejor fuente
+        # de aforo y género (datos que rara vez salen en un snippet).
         is_social = bool(web) and any(
             s in web.lower() for s in ["facebook.com", "instagram.com", "twitter.com", "x.com", "linkedin.com"]
         )
@@ -584,8 +591,8 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
         if email and "@" not in email:
             email = None
 
-        if email or telefono or instagram or web or genero:
-            print(f"[scout.py] [SUCCESS] Datos encontrados - Email: {email or 'N/A'}, Teléfono: {telefono or 'N/A'}, Instagram: {instagram or 'N/A'}, Web: {web or 'N/A'}, Género: {genero or 'N/A'}")
+        if email or telefono or instagram or web or genero or aforo:
+            print(f"[scout.py] [SUCCESS] Datos encontrados - Email: {email or 'N/A'}, Teléfono: {telefono or 'N/A'}, Instagram: {instagram or 'N/A'}, Web: {web or 'N/A'}, Género: {genero or 'N/A'}, Aforo: {aforo or 'N/A'}")
             
             notas_previas = lead.get("notas") or ""
             nuevas_notas = (

@@ -1,3 +1,31 @@
+
+steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      # 🔑 ESTE ES EL PASO QUE DEBES AÑADIR:
+      - name: Create Google Credentials File
+        run: |
+          echo '${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}' > /tmp/google_creds.json
+
+      # 🚀 Y en el paso donde ejecutas tus agentes, pasa la variable apuntando a ese archivo:
+      - name: Run Bakandeya Agent
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_creds.json
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+        run: |
+          # Aquí va tu script actual:
+          # 1. Determinar qué agente disparar...
+          # 2. Enrutador inteligente para tus scripts de agents/...
+
+
 name: Run Python Agents
 
 on:

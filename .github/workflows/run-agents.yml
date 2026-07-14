@@ -1,57 +1,41 @@
-name: Ejecución de Agentes Bakandeya On-Demand
+name: Run Bakandeya Python Agents
 
 on:
-  # Permite que nuestra aplicación web lance este workflow externamente
   workflow_dispatch:
     inputs:
       agent:
-        description: 'Nombre del agente a ejecutar (scout, redactor, enviador, lector)'
+        description: 'Nombre del agente a ejecutar (scout, scout_descubridor, redactor, enviador, lector_bandeja)'
         required: true
-        type: string
+        default: 'scout'
       extra_args:
-        description: 'Argumentos adicionales para el script de Python'
+        description: 'Argumentos adicionales para el script de Python (ej. --region "Madrid")'
         required: false
-        type: string
+        default: ''
 
 jobs:
-  run-agent:
+  run-agent-job:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout de código
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Configurar Python
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
-          cache: 'pip'
+          python-size: '3.10'
+          cache: 'pip' # Opcional si usas caché de dependencias
 
-      - name: Instalar dependencias
+      - name: Install dependencies
         run: |
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Ejecutar Agente de Bakandeya
+      - name: Run Python Agent
         env:
-          # Inyecta aquí las credenciales que usen vuestros agentes de Python (como Google Sheets)
-          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
-          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
-          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          GOOGLE_SHEETS_DOCUMENT: ${{ secrets.GOOGLE_SHEETS_DOCUMENT }}
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Aquí declaras los secretos de tu repositorio que usan tus agentes Python
+          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GMAIL_TOKEN_SECRET: ${{ secrets.GMAIL_TOKEN_SECRET }}
         run: |
-          # Determina qué script lanzar según la entrada recibida
-          if [ "${{ github.event.inputs.agent }}" = "scout" ]; then
-            python agents/scout.py ${{ github.event.inputs.extra_args }}
-          elif [ "${{ github.event.inputs.agent }}" = "redactor" ]; then
-            python agents/redactor.py ${{ github.event.inputs.extra_args }}
-          elif [ "${{ github.event.inputs.agent }}" = "enviador" ]; then
-            python agents/enviador.py ${{ github.event.inputs.extra_args }}
-          elif [ "${{ github.event.inputs.agent }}" = "lector" ]; then
-            python agents/lector.py ${{ github.event.inputs.extra_args }}
-          else
-            echo "Agente desconocido: ${{ github.event.inputs.agent }}"
-            exit 1
-          fi
+          # Esto ejecuta dinámicamente el agente recibido (ej. agents/scout_descubridor.py) con sus argumentos
+          python agents/${{ github.event.inputs.agent }}.py ${{ github.event.inputs.extra_args }}

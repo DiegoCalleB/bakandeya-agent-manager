@@ -179,6 +179,12 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
     
     if exito:
         print(f"[scout_descubridor.py] Proceso completado. Se añadieron {len(leads_a_crear)} leads.")
+        print(f"\n[scout_descubridor.py] Iniciando enriquecimiento automático para los {len(leads_a_crear)} nuevos leads...")
+        try:
+            from agents.scout import enriquecer_leads_sin_contacto
+            enriquecer_leads_sin_contacto(limite_leads=len(leads_a_crear), region=region)
+        except Exception as e:
+            print(f"[scout_descubridor.py] Error al enriquecer automáticamente: {e}")
         return len(leads_a_crear)
     else:
         print("[scout_descubridor.py] Error al insertar leads en la Google Sheet.")

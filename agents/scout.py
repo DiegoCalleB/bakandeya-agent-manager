@@ -366,6 +366,38 @@ def extraer_datos_contacto(texto, url_origen, tipo="sala"):
         aceptados["_sugerencias"] = sugerencias
     return aceptados
 
+def obtener_mapa_regiones_ciudades(ciudades):
+    """
+    Usa Gemini para mapear una lista de ciudades de España a su Provincia y Comunidad Autónoma.
+    Esto permite filtrar leads por región/provincia de forma inteligente (ej: detectar que
+    Pamplona y Tudela pertenecen a Navarra).
+    """
+    if not ciudades:
+        return {}
+        
+    prompt = (
+        "Dada la siguiente lista de ciudades/municipios de España, asocia cada una con su Provincia y su Comunidad Autónoma correspondiente.\n"
+        f"Ciudades: {json.dumps(ciudades)}\n\n"
+        "Devuelve únicamente un objeto JSON con el siguiente formato exacto, sin explicaciones ni markdown:\n"
+        "{\n"
+        "  \"Nombre de la ciudad\": {\"provincia\": \"nombre_provincia\", \"comunidad\": \"nombre_comunidad\"}\n"
+        "}"
+    )
+    
+    try:
+        res = gemini_client.generar_texto_gemini(
+            prompt=prompt,
+            model_name="gemini-2.5-flash",
+            temperature=0.1,
+            forzar_json=True
+        )
+        if res:
+            return json.loads(res)
+    except Exception as e:
+        print(f"[scout.py] Error al mapear regiones de ciudades con IA: {e}")
+    return {}
+
+
 def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
     """
     Busca leads en la Google Sheet que tengan datos incompletos (especialmente email_contacto)
@@ -397,8 +429,34 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
         leads = leads_nuevos + leads_pendientes_sin_email
     
     if region:
-        leads = [l for l in leads if (l.get("region") and region.lower() in str(l.get("region")).lower()) or (l.get("ciudad") and region.lower() in str(l.get("ciudad")).lower())]
-        print(f"[scout.py] Filtrando leads para la región/ciudad: '{region}'. Encontrados: {len(leads)}")
+        # Extraer ciudades únicas de los leads para consultar a la IA a qué provincia/comunidad pertenecen
+        ciudades_unicas = list(set([str(l.get("ciudad")).strip() for l in leads if l.get("ciudad")]))
+        mapa_regiones = obtener_mapa_regiones_ciudades(ciudades_unicas)
+        
+        region_clean = region.strip().lower()
+        leads_filtrados = []
+        
+        for l in leads:
+            ciudad = str(l.get("ciudad") or "").strip()
+            reg_col = str(l.get("region") or "").strip().lower()
+            ciudad_col = ciudad.lower()
+            
+            # 1. Comprobación directa (si el texto coincide con la columna region o ciudad)
+            match_directo = region_clean in reg_col or region_clean in ciudad_col
+            
+            # 2. Comprobación de provincia o comunidad autónoma mediante mapa de IA de la ciudad
+            match_ia = False
+            info_ciudad = mapa_regiones.get(ciudad)
+            if info_ciudad:
+                provincia = str(info_ciudad.get("provincia") or "").lower()
+                comunidad = str(info_ciudad.get("comunidad") or "").lower()
+                match_ia = region_clean in provincia or region_clean in comunidad
+                
+            if match_directo or match_ia:
+                leads_filtrados.append(l)
+                
+        leads = leads_filtrados
+        print(f"[scout.py] Filtrando leads para la región/ciudad/provincia: '{region}'. Encontrados: {len(leads)}")
         
     # Filtrar leads a los que les falte algún dato clave según su estado
     leads_incompletos = []

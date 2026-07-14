@@ -1,41 +1,81 @@
-name: Run Bakandeya Python Agents
+name: Run Python Agents
 
 on:
+  # Permite el disparo automático por tiempo (Cron) si lo necesitas
+  schedule:
+    - cron: '0 9 * * *' # Corre todos los días a las 09:00 UTC (por ejemplo)
+    
+  # Permite que la app del panel de control lo despierte en directo con parámetros
   workflow_dispatch:
     inputs:
       agent:
-        description: 'Nombre del agente a ejecutar (scout, scout_descubridor, redactor, enviador, lector_bandeja)'
+        description: 'Agente de Bakandeya a ejecutar'
         required: true
         default: 'scout'
+        type: choice
+        options:
+          - scout
+          - scout_descubridor
+          - redactor
+          - enviador
+          - lector
       extra_args:
-        description: 'Argumentos adicionales para el script de Python (ej. --region "Madrid")'
+        description: 'Argumentos adicionales para el script de Python (ej: --region Andalucía)'
         required: false
         default: ''
+        type: string
 
 jobs:
-  run-agent-job:
+  run-agent:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: Checkout del repositorio
         uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: Configurar Python
         uses: actions/setup-python@v4
         with:
-          python-size: '3.10'
-          cache: 'pip' # Opcional si usas caché de dependencias
+          python-version: '3.10'
+          cache: 'pip'
 
-      - name: Install dependencies
+      - name: Instalar dependencias de Python
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Run Python Agent
+      - name: Ejecutar Agente de Bakandeya
         env:
-          # Aquí declaras los secretos de tu repositorio que usan tus agentes Python
+          # Aquí van las credenciales que usan tus scripts de Python
           GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GMAIL_TOKEN_SECRET: ${{ secrets.GMAIL_TOKEN_SECRET }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
         run: |
-          # Esto ejecuta dinámicamente el agente recibido (ej. agents/scout_descubridor.py) con sus argumentos
-          python agents/${{ github.event.inputs.agent }}.py ${{ github.event.inputs.extra_args }}
+          # 1. Determinar qué agente disparar (por input manual/API o fallback de schedule)
+          AGENT="${{ github.event.inputs.agent }}"
+          ARGS="${{ github.event.inputs.extra_args }}"
+          
+          # Si se dispara por cron (schedule), ejecutamos por defecto el Lector de bandeja
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            AGENT="lector"
+          fi
+
+          echo "Iniciando ejecución de agente: $AGENT"
+          echo "Argumentos adicionales: $ARGS"
+
+          # 2. Enrutador inteligente para tus scripts de agents/
+          if [ "$AGENT" = "scout" ]; then
+            python agents/scout.py $ARGS
+          elif [ "$AGENT" = "scout_descubridor" ]; then
+            python agents/scout_descubridor.py $ARGS
+          elif [ "$AGENT" = "redactor" ]; then
+            python agents/redactor.py $ARGS
+          elif [ "$AGENT" = "enviador" ]; then
+            python agents/enviador.py $ARGS
+          elif [ "$AGENT" = "lector" ]; then
+            python agents/lector.py $ARGS
+          else
+            echo "Error: Agente '$AGENT' no reconocido."
+            exit 1
+          fi

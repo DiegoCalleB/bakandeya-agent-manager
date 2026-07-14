@@ -44,7 +44,7 @@ jobs:
         run: |
           # Determina qué script lanzar según la entrada recibida
           if [ "${{ github.event.inputs.agent }}" = "scout" ]; then
-            python agents/larra_sync.py ${{ github.event.inputs.extra_args }}
+            python agents/scout.py ${{ github.event.inputs.extra_args }}
           elif [ "${{ github.event.inputs.agent }}" = "redactor" ]; then
             python agents/redactor.py ${{ github.event.inputs.extra_args }}
           elif [ "${{ github.event.inputs.agent }}" = "enviador" ]; then

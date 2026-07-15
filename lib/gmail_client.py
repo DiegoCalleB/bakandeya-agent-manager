@@ -77,7 +77,7 @@ def enviar_email(destinatario, asunto, cuerpo_texto):
         print(f"Error al enviar el email a {destinatario}: {e}")
         return None
 
-def crear_borrador(destinatario, asunto, cuerpo_texto, thread_id=None):
+def crear_borrador(destinatario, asunto, cuerpo_texto, thread_id=None, in_reply_to=None):
     """
     Crea un borrador (draft) en Gmail o lo guarda localmente en un archivo HTML en modo simulado.
     """
@@ -150,6 +150,7 @@ def crear_borrador(destinatario, asunto, cuerpo_texto, thread_id=None):
             <div class="header-line"><strong>Para:</strong> {destinatario}</div>
             <div class="header-line"><strong>Asunto:</strong> {asunto}</div>
             {f'<div class="header-line"><strong>Thread ID:</strong> {thread_id}</div>' if thread_id else ''}
+            {f'<div class="header-line"><strong>In-Reply-To:</strong> {in_reply_to}</div>' if in_reply_to else ''}
         </div>
         <div class="email-body">{cuerpo_html}</div>
     </div>
@@ -170,6 +171,9 @@ def crear_borrador(destinatario, asunto, cuerpo_texto, thread_id=None):
         mensaje = MIMEText(cuerpo_texto)
         mensaje['to'] = destinatario
         mensaje['subject'] = asunto
+        if in_reply_to:
+            mensaje['In-Reply-To'] = in_reply_to
+            mensaje['References'] = in_reply_to
         
         # Codificar el mensaje en base64url
         raw_message = base64.urlsafe_b64encode(mensaje.as_bytes()).decode('utf-8')

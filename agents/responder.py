@@ -54,6 +54,7 @@ def obtener_ultimo_email_de_contacto(email_contacto):
         remitente = next((h['value'] for h in headers if h['name'].lower() == 'from'), "Desconocido")
         asunto = next((h['value'] for h in headers if h['name'].lower() == 'subject'), "Sin Asunto")
         fecha = next((h['value'] for h in headers if h['name'].lower() == 'date'), "Sin Fecha")
+        message_id = next((h['value'] for h in headers if h['name'].lower() == 'message-id'), None)
         
         # Obtener cuerpo del correo
         parts = m_det.get('payload', {}).get('parts', [])
@@ -75,6 +76,7 @@ def obtener_ultimo_email_de_contacto(email_contacto):
         return {
             "id": ultimo_msg_id,
             "threadId": m_det.get("threadId"),
+            "messageId": message_id,
             "remitente": remitente,
             "asunto": asunto,
             "fecha": fecha,
@@ -171,7 +173,10 @@ def responder_leads_interesados():
             asunto_respuesta = f"Re: {asunto_respuesta}"
             
         print(f"[responder.py] Creando borrador de respuesta para {email} (Asunto: {asunto_respuesta})...")
-        res_draft = gmail_client.crear_borrador(email, asunto_respuesta, cuerpo_respuesta_ia, thread_id=thread_id)
+        res_draft = gmail_client.crear_borrador(
+            email, asunto_respuesta, cuerpo_respuesta_ia, 
+            thread_id=thread_id, in_reply_to=ultimo_email.get("messageId")
+        )
         
         if res_draft:
             borradores_creados += 1

@@ -77,7 +77,7 @@ def enviar_email(destinatario, asunto, cuerpo_texto):
         print(f"Error al enviar el email a {destinatario}: {e}")
         return None
 
-def crear_borrador(destinatario, asunto, cuerpo_texto):
+def crear_borrador(destinatario, asunto, cuerpo_texto, thread_id=None):
     """
     Crea un borrador (draft) en Gmail o lo guarda localmente en un archivo HTML en modo simulado.
     """
@@ -149,6 +149,7 @@ def crear_borrador(destinatario, asunto, cuerpo_texto):
             <span class="sim-badge">Borrador Simulado Local</span>
             <div class="header-line"><strong>Para:</strong> {destinatario}</div>
             <div class="header-line"><strong>Asunto:</strong> {asunto}</div>
+            {f'<div class="header-line"><strong>Thread ID:</strong> {thread_id}</div>' if thread_id else ''}
         </div>
         <div class="email-body">{cuerpo_html}</div>
     </div>
@@ -172,7 +173,11 @@ def crear_borrador(destinatario, asunto, cuerpo_texto):
         
         # Codificar el mensaje en base64url
         raw_message = base64.urlsafe_b64encode(mensaje.as_bytes()).decode('utf-8')
-        body = {'message': {'raw': raw_message}}
+        message_body = {'raw': raw_message}
+        if thread_id:
+            message_body['threadId'] = thread_id
+            
+        body = {'message': message_body}
         
         borrador = service.users().drafts().create(userId='me', body=body).execute()
         print(f"Borrador creado con éxito. ID: {borrador['id']}")
@@ -250,6 +255,7 @@ def leer_respuestas(query="is:unread"):
                             
             respuestas.append({
                 "id": msg['id'],
+                "threadId": m_det.get("threadId"),
                 "remitente": remitente,
                 "asunto": asunto,
                 "fecha": fecha,

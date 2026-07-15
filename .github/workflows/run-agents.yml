@@ -19,6 +19,7 @@ on:
           - redactor
           - enviador
           - lector
+          - responder
       extra_args:
         description: 'Argumentos adicionales para el script de Python (ej: --region Navarra --tipo sala)'
         required: false
@@ -89,7 +90,9 @@ jobs:
           elif [ "$AGENT" = "enviador" ]; then
             .venv/bin/python agents/enviador.py $ARGS
           elif [ "$AGENT" = "lector" ]; then
-            .venv/bin/python agents/lector.py $ARGS
+            .venv/bin/python agents/lector_bandeja.py $ARGS
+          elif [ "$AGENT" = "responder" ]; then
+            .venv/bin/python agents/responder.py $ARGS
           else
             echo "Error: Agente '$AGENT' no reconocido."
             exit 1

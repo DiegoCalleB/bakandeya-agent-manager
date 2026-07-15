@@ -91,7 +91,8 @@ def procesar_nuevos_leads(limite_leads=9999, lead_id_especifico=None, regenerar=
             "4. GANCHO DE AFORO Y GÉNERO: Incorpora el género del local y adapta el discurso al aforo: \n"
             f"   - Si el aforo es pequeño (< 300 personas, aforo actual del local: {aforo}), enfócalo como un show íntimo de alta energía, interacción cara a cara y conexión directa con el público.\n"
             f"   - Si el aforo es mediano/grande (>= 300 personas, aforo actual del local: {aforo}), enfócalo como una noche de clubbing, fiesta explosiva y baile masivo idóneo para llenar su espacio.\n"
-            "5. ENLACES INTEGRADOS: Inserta de manera fluida y dentro del texto los enlaces del EPK (sin listas feas al final)."
+            "5. ENLACES INTEGRADOS: Inserta de manera fluida y dentro del texto los enlaces del EPK (sin listas feas al final).\n"
+            f"6. PROHIBIDO PLACEHOLDERS O CORCHETES: Está estrictamente prohibido incluir marcadores de posición o textos entre corchetes como '[Nombre del programador]', '[Fecha]', '[Responsable]', etc. Si no conoces el nombre de la persona, saluda siempre de forma cercana y natural (ej: 'Hola al equipo de {nombre_sala},', 'Hola gente de {nombre_sala},', 'Buenas,')."
         )
         
         if tipo == "ayuntamiento":

@@ -40,7 +40,7 @@ def obtener_ultimo_email_de_contacto(email_contacto):
     try:
         service = gmail_client.obtener_servicio_gmail()
         # Buscamos correos relacionados con el contacto
-        query = f"from:{email_contacto} or to:{email_contacto}"
+        query = email_contacto
         resultado = service.users().messages().list(userId='me', q=query, maxResults=5).execute()
         mensajes = resultado.get('messages', [])
         if not mensajes:

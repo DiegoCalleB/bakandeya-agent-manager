@@ -108,9 +108,12 @@ def responder_leads_interesados():
         email = lead.get("email_contacto")
         notas = lead.get("notas") or ""
         
-        # Evitar re-redactar si ya creamos un borrador de respuesta hoy
-        if "Respuesta redactada en borrador" in notas and fecha_hoy in notas:
-            print(f"[responder.py] Lead {lead_id} ({nombre_sala}) ya tiene un borrador de respuesta redactado hoy. Saltando.")
+        # Evitar re-redactar si ya respondimos a la última respuesta del lead.
+        # Si la última entrada en notas es un borrador de respuesta hoy, y NO hay un email recibido posterior, saltamos.
+        pos_recibido = notas.rfind("Respuesta recibida")
+        pos_redactado = notas.rfind("Respuesta redactada en borrador")
+        if pos_redactado != -1 and pos_redactado > pos_recibido and fecha_hoy in notas[pos_redactado:]:
+            print(f"[responder.py] Lead {lead_id} ({nombre_sala}) ya tiene un borrador de respuesta redactado para el mensaje más reciente hoy. Saltando.")
             continue
             
         if not email:

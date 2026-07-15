@@ -16,7 +16,11 @@ def procesar_bandeja_entrada():
     """
     print("[lector_bandeja.py] Iniciando lectura de respuestas...")
     respuestas = gmail_client.leer_respuestas()
-    leads_esperando = sheets.obtener_leads(estado=estados.ESPERANDO)
+    leads_esperando = (
+        sheets.obtener_leads(estado=estados.ESPERANDO) +
+        sheets.obtener_leads(estado=estados.INTERESADO) +
+        sheets.obtener_leads(estado=estados.NEGOCIANDO)
+    )
     
     if not respuestas:
         print("[lector_bandeja.py] No hay nuevas respuestas en la bandeja.")

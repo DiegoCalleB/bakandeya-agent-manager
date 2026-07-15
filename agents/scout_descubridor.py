@@ -99,44 +99,56 @@ def extraer_candidatos_con_ia(resultados, tipo, region):
 
 def descubrir_y_añadir_leads(region, tipo, limite=10):
     """
-    Busca leads de un tipo específico en una región/provincia, los deduplica contra
-    los existentes en la Google Sheet, y los crea masivamente en estado 'nuevo'.
+    Busca leads de uno o varios tipos específicos (separados por comas) en una región/provincia,
+    los deduplica contra los existentes en la Google Sheet, y los crea masivamente en estado 'nuevo'.
     """
-    print(f"[scout_descubridor.py] Iniciando descubrimiento de {tipo}s en la región/provincia: {region}")
+    tipos = [t.strip().lower() for t in tipo.split(",") if t.strip()]
+    print(f"[scout_descubridor.py] Iniciando descubrimiento en la región/provincia '{region}' para los tipos: {tipos}")
     
-    # 1. Generar la query de búsqueda adecuada
-    if tipo == "ayuntamiento":
-        query = f"municipios y ayuntamientos de la provincia de {region}"
-    elif tipo == "festival":
-        query = f"festivales de musica ciclos conciertos {region}"
-    else:
-        query = f"salas de conciertos locales de musica en vivo {region}"
+    todos_candidatos = []
+    
+    # 1. Generar búsquedas y extraer candidatos por cada tipo individual
+    for tipo_individual in tipos:
+        if tipo_individual == "ayuntamiento":
+            query = f"municipios y ayuntamientos de la provincia de {region}"
+        elif tipo_individual == "festival":
+            query = f"festivales de musica ciclos conciertos {region}"
+        else:
+            query = f"salas de conciertos locales de musica en vivo {region}"
+            
+        print(f"[scout_descubridor.py] Buscando en DuckDuckGo con query: '{query}'...")
+        resultados = buscar_duckduckgo(query, max_results=10)
         
-    print(f"[scout_descubridor.py] Buscando en DuckDuckGo con query: '{query}'...")
-    resultados = buscar_duckduckgo(query, max_results=10)
-    
-    if not resultados:
-        print("[scout_descubridor.py] No se obtuvieron resultados de búsqueda. Abortando.")
+        if not resultados:
+            print(f"[scout_descubridor.py] No se obtuvieron resultados para tipo '{tipo_individual}'. Saltando.")
+            continue
+            
+        candidatos = extraer_candidatos_con_ia(resultados, tipo_individual, region)
+        print(f"[scout_descubridor.py] IA extrajo {len(candidatos)} posibles candidatos de tipo '{tipo_individual}'.")
+        
+        # Guardar la asignación del tipo correspondiente
+        for c in candidatos:
+            c["tipo"] = tipo_individual
+            
+        todos_candidatos.extend(candidatos)
+        
+    if not todos_candidatos:
+        print("[scout_descubridor.py] No se extrajeron candidatos válidos de ningún tipo.")
+        from lib.webhooks import enviar_webhook_finalizacion
+        enviar_webhook_finalizacion("scout_descubridor", region, creados=0, leads_enriquecidos=[])
         return 0
         
-    # 2. Extraer candidatos usando Gemini
-    candidatos = extraer_candidatos_con_ia(resultados, tipo, region)
-    print(f"[scout_descubridor.py] IA extrajo {len(candidatos)} posibles candidatos.")
-    
-    if not candidatos:
-        print("[scout_descubridor.py] No se extrajeron candidatos válidos.")
-        return 0
-        
-    # 3. Cargar leads existentes para deduplicación
+    # 2. Cargar leads existentes para deduplicación
     leads_existentes = sheets.obtener_leads()
     nombres_existentes_normalizados = {normalizar_nombre(l.get("nombre_sala")) for l in leads_existentes if l.get("nombre_sala")}
     
     leads_a_crear = []
     
-    for cand in candidatos:
+    for cand in todos_candidatos:
         nombre = cand.get("nombre")
         ciudad = cand.get("ciudad") or region
         fuente_snippet = cand.get("fuente")
+        tipo_cand = cand.get("tipo")
 
         if not nombre:
             continue
@@ -154,11 +166,11 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
             "nombre_sala": nombre,
             "ciudad": ciudad or region,
             "region": "España",  # En la Sheet, la columna 'region' almacena el país (España)
-            "tipo": tipo,
+            "tipo": tipo_cand,
             "fuente": f"Scout Descubridor: {region}",
             "estado": estados.NUEVO,
             "notas": (
-                "Descubierto automáticamente por el agente Scout Descubridor"
+                f"Descubierto automáticamente por el agente Scout Descubridor (tipo: {tipo_cand})"
                 + (f" (snippet {fuente_snippet})." if fuente_snippet else ".")
                 + " Contacto SIN verificar: pendiente de enriquecer por el Scout."
             ),
@@ -201,8 +213,15 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Agente Scout Descubridor para búsqueda activa de leads.")
     parser.add_argument("--region", type=str, required=True, help="Región o Provincia donde buscar.")
-    parser.add_argument("--tipo", type=str, required=True, choices=["sala", "festival", "ayuntamiento"], help="Tipo de entidad a buscar.")
+    parser.add_argument("--tipo", type=str, required=True, help="Tipo de entidad a buscar (separado por comas, ej: 'sala,festival').")
     parser.add_argument("--limit", type=int, default=10, help="Límite máximo de nuevos leads a añadir.")
     args = parser.parse_args()
     
+    # Validar tipos
+    tipos = [t.strip().lower() for t in args.tipo.split(",") if t.strip()]
+    tipos_validos = ["sala", "festival", "ayuntamiento"]
+    for t in tipos:
+        if t not in tipos_validos:
+            parser.error(f"Tipo '{t}' inválido. Debe ser uno de {tipos_validos}.")
+            
     descubrir_y_añadir_leads(region=args.region, tipo=args.tipo, limite=args.limit)

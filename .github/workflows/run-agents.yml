@@ -31,25 +31,35 @@ jobs:
 
     steps:
       - name: Checkout del repositorio
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configurar Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-          cache: 'pip'
+          python-version: '3.11'
 
+      # 📦 Cachear el entorno virtual completo (.venv)
+      - name: Cachear entorno virtual
+        uses: actions/cache@v4
+        id: cache-venv
+        with:
+          path: .venv
+          key: ${{ runner.os }}-venv-${{ hashFiles('requirements.txt') }}
+
+      # 🛠️ Instalar dependencias únicamente si hubo cache miss (cambió requirements.txt)
       - name: Instalar dependencias de Python
+        if: steps.cache-venv.outputs.cache-hit != 'true'
         run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          if [ -f requirements.txt ]; then .venv/bin/pip install -r requirements.txt; fi
 
       # 🔑 1. Crea el archivo físico de credenciales a partir de tu secreto de GitHub
       - name: Crear archivo de credenciales de Google
         run: |
           echo '${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}' > /tmp/google_creds.json
 
-      # 🚀 2. Ejecuta el Agente pasando la variable de entorno apuntando al archivo temporal
+      # 🚀 2. Ejecuta el Agente de forma inmediata usando el entorno virtual cacheado
       - name: Ejecutar Agente de Bakandeya
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/google_creds.json
@@ -69,17 +79,17 @@ jobs:
           echo "Iniciando ejecución de agente: $AGENT"
           echo "Argumentos adicionales: $ARGS"
 
-          # Enrutador inteligente para tus scripts de agents/
+          # Enrutador inteligente para tus scripts ejecutados desde el venv cacheado
           if [ "$AGENT" = "scout" ]; then
-            python agents/scout.py $ARGS
+            .venv/bin/python agents/scout.py $ARGS
           elif [ "$AGENT" = "scout_descubridor" ]; then
-            python agents/scout_descubridor.py $ARGS
+            .venv/bin/python agents/scout_descubridor.py $ARGS
           elif [ "$AGENT" = "redactor" ]; then
-            python agents/redactor.py $ARGS
+            .venv/bin/python agents/redactor.py $ARGS
           elif [ "$AGENT" = "enviador" ]; then
-            python agents/enviador.py $ARGS
+            .venv/bin/python agents/enviador.py $ARGS
           elif [ "$AGENT" = "lector" ]; then
-            python agents/lector.py $ARGS
+            .venv/bin/python agents/lector.py $ARGS
           else
             echo "Error: Agente '$AGENT' no reconocido."
             exit 1

@@ -23,15 +23,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout del repositorio
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Configurar Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Instalar dependencias
-        run: pip install -r requirements.txt
+      # 📦 Cachear el entorno virtual completo (.venv)
+      - name: Cachear entorno virtual
+        uses: actions/cache@v4
+        id: cache-venv
+        with:
+          path: .venv
+          key: ${{ runner.os }}-venv-${{ hashFiles('requirements.txt') }}
+
+      # 🛠️ Instalar dependencias únicamente si hubo cache miss (cambió requirements.txt)
+      - name: Instalar dependencias de Python
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          if [ -f requirements.txt ]; then .venv/bin/pip install -r requirements.txt; fi
 
       - name: Escribir credenciales de la cuenta de servicio de Google
         env:
@@ -45,4 +58,4 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python agents/scout.py --limit "${{ github.event.inputs.limit || '15' }}"
+        run: .venv/bin/python agents/scout.py --limit "${{ github.event.inputs.limit || '15' }}"

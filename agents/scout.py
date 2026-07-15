@@ -398,18 +398,200 @@ def obtener_mapa_regiones_ciudades(ciudades):
     return {}
 
 
-def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
+def procesar_un_lead(lead):
+    """
+    Procesa y enriquece un único lead.
+    Retorna el diccionario de datos enriquecidos si tuvo éxito, o None si no.
+    """
+    lead_id = lead.get("id")
+    nombre_sala = lead.get("nombre_sala")
+    ciudad = lead.get("ciudad")
+    
+    # Evitar llamadas simultáneas exactas a DuckDuckGo e IA
+    time.sleep(random.uniform(0.1, 1.5))
+    
+    # Obtener o inferir el tipo de lead
+    tipo = lead.get("tipo")
+    if not tipo or tipo.strip() == "":
+        tipo = inferir_tipo_lead(nombre_sala)
+        print(f"[scout.py] Tipo de lead no especificado. Inferido como: {tipo}")
+    else:
+        tipo = tipo.strip().lower()
+        
+    print(f"\n[scout.py] >>> Procesando '{nombre_sala}' ({ciudad}) [Tipo: {tipo}] [ID: {lead_id}]")
+    
+    # Acumulador de datos aceptados (ya filtrados por confianza en cada extractor).
+    # Primera fuente que aporta un dato válido gana; _combinar no sobrescribe.
+    datos = {}
+    # Datos de confianza insuficiente: se juntan aquí para dejarlos en 'notas' como pistas
+    # a verificar, nunca en los campos verificados de la Sheet.
+    sugerencias_totales = []
+    CAMPOS = ["email", "telefono", "instagram", "website", "genero", "aforo"]
+
+    # 1. Una única búsqueda amplia + extracción estructurada desde snippets.
+    # Antes había hasta 4 búsquedas y 6 llamadas a la IA por lead; ahora arrancamos con 1
+    # de cada y solo profundizamos si falta el dato crítico (email).
+    if tipo == "ayuntamiento":
+        query_busqueda = f"{nombre_sala} concejalía festejos cultura contacto email telefono"
+    elif tipo == "festival":
+        query_busqueda = f"{nombre_sala} contacto booking contratacion email telefono"
+    else:
+        query_busqueda = f"{nombre_sala} {ciudad} web oficial contacto email telefono aforo"
+
+    results = buscar_duckduckgo(query_busqueda, max_results=8)
+    datos_snippets = extraer_datos_contacto_de_snippets(nombre_sala, ciudad, results, tipo=tipo)
+    sugerencias_totales.extend(datos_snippets.get("_sugerencias") or [])
+    _combinar(datos, datos_snippets, CAMPOS)
+
+    # 2. Si no se encontró la web oficial en los snippets amplios, la buscamos de manera dedicada
+    web = datos.get("website")
+    if not web:
+        print(f"[scout.py] Web no encontrada en snippets. Buscando web oficial de forma dedicada...")
+        web = buscar_web_sala(nombre_sala, ciudad)
+        if web:
+            datos["website"] = web
+
+    # 3. Si la web es standalone (no red social), descargamos su HTML: es la mejor fuente
+    # de aforo y género (datos que rara vez salen en un snippet).
+    is_social = bool(web) and any(
+        s in web.lower() for s in ["facebook.com", "instagram.com", "twitter.com", "x.com", "linkedin.com"]
+    )
+
+    if web and not is_social:
+        print(f"[scout.py] Intentando descargar web oficial: {web}")
+        texto_home, paginas_contacto = descargar_texto_pagina(web)
+
+        if texto_home:
+            datos_web = extraer_datos_contacto(texto_home, web, tipo=tipo)
+            sugerencias_totales.extend(datos_web.get("_sugerencias") or [])
+            _combinar(datos, datos_web, CAMPOS)
+
+            # Profundizamos en la página de contacto solo si aún falta email o aforo
+            # (el email es crítico; el aforo casi siempre vive en "el local"/"sobre nosotros").
+            if (not datos.get("email") or not datos.get("aforo")) and paginas_contacto:
+                url_contacto = paginas_contacto[0]
+                print(f"[scout.py] Buscando en página de contacto: {url_contacto}")
+                texto_contacto, _ = descargar_texto_pagina(url_contacto)
+                datos_contacto = extraer_datos_contacto(texto_contacto, url_contacto, tipo=tipo)
+                sugerencias_totales.extend(datos_contacto.get("_sugerencias") or [])
+                _combinar(datos, datos_contacto, CAMPOS)
+    elif is_social:
+        print(f"[scout.py] Canal oficial es red social ({web}), omitiendo scraping directo.")
+    else:
+        print(f"[scout.py] No se encontró web oficial standalone para descargar.")
+
+    # 4. Fallback dirigido: solo si sigue faltando el email (el único dato imprescindible).
+    # No gastamos una búsqueda extra por un teléfono o un instagram que faltan.
+    if not datos.get("email"):
+        print(f"[scout.py] Fallback: buscando específicamente el email de contacto de '{nombre_sala}'...")
+        if tipo == "ayuntamiento":
+            query_fallback = f"{nombre_sala} concejalía cultura correo electrónico"
+        elif tipo == "festival":
+            query_fallback = f"{nombre_sala} enviar propuesta artistas mail"
+        else:
+            query_fallback = f"{nombre_sala} {ciudad} contacto email correo telefono"
+
+        results_fallback = buscar_duckduckgo(query_fallback, max_results=8)
+        if results_fallback:
+            datos_fallback = extraer_datos_contacto_de_snippets(nombre_sala, ciudad, results_fallback, tipo=tipo)
+            sugerencias_totales.extend(datos_fallback.get("_sugerencias") or [])
+            _combinar(datos, datos_fallback, CAMPOS)
+
+    # 5. Formatear y guardar los resultados
+    def _limpiar(v):
+        return v.strip() if isinstance(v, str) else v
+
+    email = _limpiar(datos.get("email"))
+    telefono = _limpiar(datos.get("telefono"))
+    instagram = _limpiar(datos.get("instagram"))
+    web = _limpiar(datos.get("website"))
+    genero = _limpiar(datos.get("genero"))
+    aforo = datos.get("aforo")
+
+    # Validar formato básico de email
+    if email and "@" not in email:
+        email = None
+
+    if email or telefono or instagram or web or genero or aforo:
+        print(f"[scout.py] [SUCCESS] Datos encontrados - Email: {email or 'N/A'}, Teléfono: {telefono or 'N/A'}, Instagram: {instagram or 'N/A'}, Web: {web or 'N/A'}, Género: {genero or 'N/A'}, Aforo: {aforo or 'N/A'}")
+        
+        notas_previas = lead.get("notas") or ""
+        nuevas_notas = (
+            f"{notas_previas} | Scout enriquecido: "
+            f"Teléfono: {telefono or 'N/A'}. "
+            f"Instagram: {instagram or 'N/A'}. "
+            f"Web: {web or 'N/A'}."
+        ).strip()
+
+        # Datos de confianza insuficiente: se anotan para revisión humana, NO se escriben
+        # en los campos verificados de la Sheet.
+        if sugerencias_totales:
+            nuevas_notas += " | A verificar (baja confianza): " + "; ".join(sugerencias_totales)
+        
+        datos_actualizar = {
+            "notas": nuevas_notas
+        }
+        
+        # Guardar el tipo inferido/detectado
+        if not lead.get("tipo"):
+            datos_actualizar["tipo"] = tipo
+            
+        if email and not lead.get("email_contacto"):
+            datos_actualizar["email_contacto"] = email
+        if telefono and not lead.get("telefono"):
+            datos_actualizar["telefono"] = telefono
+        if web and not lead.get("website"):
+            datos_actualizar["website"] = web
+        if instagram and not lead.get("instagram"):
+            datos_actualizar["instagram"] = instagram
+        if genero and (not lead.get("genero") or lead.get("genero").strip() == ""):
+            datos_actualizar["genero"] = genero
+            
+        if aforo and (not lead.get("aforo") or int(lead.get("aforo")) == 0):
+            print(f"[scout.py] Aforo detectado: {aforo} personas.")
+            datos_actualizar["aforo"] = aforo
+            
+        res = sheets.actualizar_datos_lead(lead_id, datos_actualizar)
+
+        # Coordinación de estados: si tras enriquecer sigue SIN email, el redactor no puede
+        # trabajar el lead. Lo sacamos de 'nuevo' a 'sin_contacto' para que no se reintente
+        # en cada ejecución del cron. (El teléfono/web encontrados se conservan.)
+        email_final = lead.get("email_contacto") or email
+        if not email_final:
+            estados.transicionar(lead, estados.SIN_CONTACTO)
+            
+        if res:
+            return {
+                "id": lead_id,
+                "nombre": nombre_sala,
+                "ciudad": ciudad,
+                "email": email or "",
+                "telefono": telefono or "",
+                "instagram": instagram or "",
+                "web": web or "",
+                "genero": genero or "",
+                "aforo": aforo or ""
+            }
+    else:
+        print(f"[scout.py] [ERROR] No se logró extraer ningún dato de contacto para '{nombre_sala}'.")
+        notas_previas = lead.get("notas") or ""
+
+        # Guardar el tipo inferido/detectado aunque falle el enriquecimiento
+        if not lead.get("tipo"):
+            sheets.actualizar_datos_lead(lead_id, {"tipo": tipo})
+
+        # Sin ningún contacto: a 'sin_contacto' (terminal), fuera del bucle de reintentos.
+        estados.transicionar(
+            lead, estados.SIN_CONTACTO,
+            notas=f"{notas_previas} | Scout: búsqueda exhaustiva sin resultados de contacto.",
+        )
+    return None
+
+
+def enriquecer_leads_sin_contacto(limite_leads=3, region=None, enviar_webhook=True):
     """
     Busca leads en la Google Sheet que tengan datos incompletos (especialmente email_contacto)
-    y los enriquece de forma exhaustiva.
-    
-    Si se busca por región (ej. manual/chatbot), permite cargar leads en estados:
-      - nuevo (si le falta email, teléfono, web o instagram)
-      - pendiente_aprobacion (solo si le falta el email de contacto)
-      - sin_contacto (para reintentar enriquecimiento, solo si le falta el email)
-    Si no hay filtro de región (cron rutinario):
-      - nuevo (si le falta algún dato de contacto)
-      - pendiente_aprobacion (solo si le falta el email)
+    y los enriquece de forma exhaustiva en paralelo.
     """
     print("[scout.py] Iniciando proceso de enriquecimiento de leads...")
     
@@ -479,187 +661,33 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None):
     
     if not leads_incompletos:
         print("[scout.py] No hay leads incompletos para enriquecer.")
-        return 0
+        if enviar_webhook:
+            from lib.webhooks import enviar_webhook_finalizacion
+            enviar_webhook_finalizacion("scout", region or "Todas", creados=0, leads_enriquecidos=[])
+        return []
         
-    enriquecidos = 0
     leads_a_procesar = leads_incompletos[:limite_leads]
     
-    for lead in leads_a_procesar:
-        lead_id = lead.get("id")
-        nombre_sala = lead.get("nombre_sala")
-        ciudad = lead.get("ciudad")
+    # Procesar concurrentemente utilizando ThreadPoolExecutor
+    from concurrent.futures import ThreadPoolExecutor
+    max_workers = min(3, len(leads_a_procesar)) # 3 trabajadores para cuidar cuota y límites
+    
+    print(f"[scout.py] Iniciando procesamiento en paralelo de {len(leads_a_procesar)} leads con {max_workers} hilos...")
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        resultados = list(executor.map(procesar_un_lead, leads_a_procesar))
         
-        # Obtener o inferir el tipo de lead
-        tipo = lead.get("tipo")
-        if not tipo or tipo.strip() == "":
-            tipo = inferir_tipo_lead(nombre_sala)
-            print(f"[scout.py] Tipo de lead no especificado. Inferido como: {tipo}")
-        else:
-            tipo = tipo.strip().lower()
-            
-        print(f"\n[scout.py] >>> Procesando '{nombre_sala}' ({ciudad}) [Tipo: {tipo}] [ID: {lead_id}]")
+    # Filtrar los leads que se enriquecieron correctamente
+    leads_enriquecidos_detalles = [r for r in resultados if r is not None]
+    
+    print(f"\n[scout.py] Enriquecimiento finalizado. Leads completados con éxito: {len(leads_enriquecidos_detalles)}")
+    
+    # Enviar notificación webhook si se requiere
+    if enviar_webhook:
+        from lib.webhooks import enviar_webhook_finalizacion
+        enviar_webhook_finalizacion("scout", region or "Todas", creados=0, leads_enriquecidos=leads_enriquecidos_detalles)
         
-        # Acumulador de datos aceptados (ya filtrados por confianza en cada extractor).
-        # Primera fuente que aporta un dato válido gana; _combinar no sobrescribe.
-        datos = {}
-        # Datos de confianza insuficiente: se juntan aquí para dejarlos en 'notas' como pistas
-        # a verificar, nunca en los campos verificados de la Sheet.
-        sugerencias_totales = []
-        CAMPOS = ["email", "telefono", "instagram", "website", "genero", "aforo"]
-
-        # 1. Una única búsqueda amplia + extracción estructurada desde snippets.
-        # Antes había hasta 4 búsquedas y 6 llamadas a la IA por lead; ahora arrancamos con 1
-        # de cada y solo profundizamos si falta el dato crítico (email).
-        if tipo == "ayuntamiento":
-            query_busqueda = f"{nombre_sala} concejalía festejos cultura contacto email telefono"
-        elif tipo == "festival":
-            query_busqueda = f"{nombre_sala} contacto booking contratacion email telefono"
-        else:
-            query_busqueda = f"{nombre_sala} {ciudad} web oficial contacto email telefono aforo"
-
-        results = buscar_duckduckgo(query_busqueda, max_results=8)
-        datos_snippets = extraer_datos_contacto_de_snippets(nombre_sala, ciudad, results, tipo=tipo)
-        sugerencias_totales.extend(datos_snippets.get("_sugerencias") or [])
-        _combinar(datos, datos_snippets, CAMPOS)
-
-        # 2. Si no se encontró la web oficial en los snippets amplios, la buscamos de manera dedicada
-        web = datos.get("website")
-        if not web:
-            print(f"[scout.py] Web no encontrada en snippets. Buscando web oficial de forma dedicada...")
-            web = buscar_web_sala(nombre_sala, ciudad)
-            if web:
-                datos["website"] = web
-
-        # 3. Si la web es standalone (no red social), descargamos su HTML: es la mejor fuente
-        # de aforo y género (datos que rara vez salen en un snippet).
-        is_social = bool(web) and any(
-            s in web.lower() for s in ["facebook.com", "instagram.com", "twitter.com", "x.com", "linkedin.com"]
-        )
-
-        if web and not is_social:
-            print(f"[scout.py] Intentando descargar web oficial: {web}")
-            texto_home, paginas_contacto = descargar_texto_pagina(web)
-
-            if texto_home:
-                datos_web = extraer_datos_contacto(texto_home, web, tipo=tipo)
-                sugerencias_totales.extend(datos_web.get("_sugerencias") or [])
-                _combinar(datos, datos_web, CAMPOS)
-
-                # Profundizamos en la página de contacto solo si aún falta email o aforo
-                # (el email es crítico; el aforo casi siempre vive en "el local"/"sobre nosotros").
-                if (not datos.get("email") or not datos.get("aforo")) and paginas_contacto:
-                    url_contacto = paginas_contacto[0]
-                    print(f"[scout.py] Buscando en página de contacto: {url_contacto}")
-                    texto_contacto, _ = descargar_texto_pagina(url_contacto)
-                    datos_contacto = extraer_datos_contacto(texto_contacto, url_contacto, tipo=tipo)
-                    sugerencias_totales.extend(datos_contacto.get("_sugerencias") or [])
-                    _combinar(datos, datos_contacto, CAMPOS)
-        elif is_social:
-            print(f"[scout.py] Canal oficial es red social ({web}), omitiendo scraping directo.")
-        else:
-            print(f"[scout.py] No se encontró web oficial standalone para descargar.")
-
-        # 3. Fallback dirigido: solo si sigue faltando el email (el único dato imprescindible).
-        # No gastamos una búsqueda extra por un teléfono o un instagram que faltan.
-        if not datos.get("email"):
-            print(f"[scout.py] Fallback: buscando específicamente el email de contacto de '{nombre_sala}'...")
-            if tipo == "ayuntamiento":
-                query_fallback = f"{nombre_sala} concejalía cultura correo electrónico"
-            elif tipo == "festival":
-                query_fallback = f"{nombre_sala} enviar propuesta artistas mail"
-            else:
-                query_fallback = f"{nombre_sala} {ciudad} contacto email correo telefono"
-
-            results_fallback = buscar_duckduckgo(query_fallback, max_results=8)
-            if results_fallback:
-                datos_fallback = extraer_datos_contacto_de_snippets(nombre_sala, ciudad, results_fallback, tipo=tipo)
-                sugerencias_totales.extend(datos_fallback.get("_sugerencias") or [])
-                _combinar(datos, datos_fallback, CAMPOS)
-
-        # 4. Formatear y guardar los resultados
-        def _limpiar(v):
-            return v.strip() if isinstance(v, str) else v
-
-        email = _limpiar(datos.get("email"))
-        telefono = _limpiar(datos.get("telefono"))
-        instagram = _limpiar(datos.get("instagram"))
-        web = _limpiar(datos.get("website"))
-        genero = _limpiar(datos.get("genero"))
-        aforo = datos.get("aforo")
-
-        # Validar formato básico de email
-        if email and "@" not in email:
-            email = None
-
-        if email or telefono or instagram or web or genero or aforo:
-            print(f"[scout.py] [SUCCESS] Datos encontrados - Email: {email or 'N/A'}, Teléfono: {telefono or 'N/A'}, Instagram: {instagram or 'N/A'}, Web: {web or 'N/A'}, Género: {genero or 'N/A'}, Aforo: {aforo or 'N/A'}")
-            
-            notas_previas = lead.get("notas") or ""
-            nuevas_notas = (
-                f"{notas_previas} | Scout enriquecido: "
-                f"Teléfono: {telefono or 'N/A'}. "
-                f"Instagram: {instagram or 'N/A'}. "
-                f"Web: {web or 'N/A'}."
-            ).strip()
-
-            # Datos de confianza insuficiente: se anotan para revisión humana, NO se escriben
-            # en los campos verificados de la Sheet.
-            if sugerencias_totales:
-                nuevas_notas += " | A verificar (baja confianza): " + "; ".join(sugerencias_totales)
-            
-            datos_actualizar = {
-                "notas": nuevas_notas
-            }
-            
-            # Guardar el tipo inferido/detectado
-            if not lead.get("tipo"):
-                datos_actualizar["tipo"] = tipo
-                
-            if email and not lead.get("email_contacto"):
-                datos_actualizar["email_contacto"] = email
-            if telefono and not lead.get("telefono"):
-                datos_actualizar["telefono"] = telefono
-            if web and not lead.get("website"):
-                datos_actualizar["website"] = web
-            if instagram and not lead.get("instagram"):
-                datos_actualizar["instagram"] = instagram
-            if genero and (not lead.get("genero") or lead.get("genero").strip() == ""):
-                datos_actualizar["genero"] = genero
-                
-            if aforo and (not lead.get("aforo") or int(lead.get("aforo")) == 0):
-                print(f"[scout.py] Aforo detectado: {aforo} personas.")
-                datos_actualizar["aforo"] = aforo
-                
-            res = sheets.actualizar_datos_lead(lead_id, datos_actualizar)
-            if res:
-                enriquecidos += 1
-
-            # Coordinación de estados: si tras enriquecer sigue SIN email, el redactor no puede
-            # trabajar el lead. Lo sacamos de 'nuevo' a 'sin_contacto' para que no se reintente
-            # en cada ejecución del cron. (El teléfono/web encontrados se conservan.)
-            email_final = lead.get("email_contacto") or email
-            if not email_final:
-                estados.transicionar(lead, estados.SIN_CONTACTO)
-        else:
-            print(f"[scout.py] [ERROR] No se logró extraer ningún dato de contacto para '{nombre_sala}'.")
-            notas_previas = lead.get("notas") or ""
-
-            # Guardar el tipo inferido/detectado aunque falle el enriquecimiento
-            if not lead.get("tipo"):
-                sheets.actualizar_datos_lead(lead_id, {"tipo": tipo})
-
-            # Sin ningún contacto: a 'sin_contacto' (terminal), fuera del bucle de reintentos.
-            estados.transicionar(
-                lead, estados.SIN_CONTACTO,
-                notas=f"{notas_previas} | Scout: búsqueda exhaustiva sin resultados de contacto.",
-            )
-            
-        # Respetar rate limits
-        delay = random.uniform(3, 5)
-        time.sleep(delay)
-        
-    print(f"\n[scout.py] Enriquecimiento finalizado. Leads completados con éxito: {enriquecidos}")
-    return enriquecidos
+    return leads_enriquecidos_detalles
 
 if __name__ == "__main__":
     import argparse

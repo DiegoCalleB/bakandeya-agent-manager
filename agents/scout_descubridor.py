@@ -172,6 +172,8 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
             
     if not leads_a_crear:
         print("[scout_descubridor.py] Todos los candidatos descubiertos ya existían en la Google Sheet.")
+        from lib.webhooks import enviar_webhook_finalizacion
+        enviar_webhook_finalizacion("scout_descubridor", region, creados=0, leads_enriquecidos=[])
         return 0
         
     print(f"[scout_descubridor.py] Insertando {len(leads_a_crear)} nuevos leads en la Google Sheet...")
@@ -180,14 +182,20 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
     if exito:
         print(f"[scout_descubridor.py] Proceso completado. Se añadieron {len(leads_a_crear)} leads.")
         print(f"\n[scout_descubridor.py] Iniciando enriquecimiento automático para los {len(leads_a_crear)} nuevos leads...")
+        leads_enriquecidos = []
         try:
             from agents.scout import enriquecer_leads_sin_contacto
-            enriquecer_leads_sin_contacto(limite_leads=len(leads_a_crear), region=region)
+            leads_enriquecidos = enriquecer_leads_sin_contacto(limite_leads=len(leads_a_crear), region=region, enviar_webhook=False)
         except Exception as e:
             print(f"[scout_descubridor.py] Error al enriquecer automáticamente: {e}")
+        
+        from lib.webhooks import enviar_webhook_finalizacion
+        enviar_webhook_finalizacion("scout_descubridor", region, creados=len(leads_a_crear), leads_enriquecidos=leads_enriquecidos)
         return len(leads_a_crear)
     else:
         print("[scout_descubridor.py] Error al insertar leads en la Google Sheet.")
+        from lib.webhooks import enviar_webhook_finalizacion
+        enviar_webhook_finalizacion("scout_descubridor", region, creados=0, leads_enriquecidos=[])
         return 0
 
 if __name__ == "__main__":

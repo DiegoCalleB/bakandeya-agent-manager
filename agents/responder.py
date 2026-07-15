@@ -135,8 +135,14 @@ def responder_leads_interesados():
         
         print(f"[responder.py] Redactando respuesta contextualizada para '{nombre_sala}'...")
         
+        # Obtener datos de contacto dinámicos del EPK
+        contacto_info = epk.get("contacto", {})
+        c_nombre = contacto_info.get("nombre", "Jose (Filgue)")
+        c_telefono = contacto_info.get("telefono", "+34 660107178")
+        c_rol = contacto_info.get("rol", "Manager de la banda")
+
         instruccion_sistema = (
-            "Eres el manager de la banda Bakandeya, un proyecto de Electrobasura / Reggae / Balkan Punk de Madrid.\n"
+            "Eres el manager virtual de la banda Bakandeya, un proyecto de Electrobasura / Reggae / Balkan Punk de Madrid.\n"
             "Tu tono es enérgico, fresco, profesional, cercano y asertivo.\n"
             "Debes redactar una respuesta al email que nos envió la sala, usando la información del EPK de la banda.\n\n"
             f"Información de la banda (EPK):\n"
@@ -146,10 +152,15 @@ def responder_leads_interesados():
             f"- Disponibilidad: {epk.get('disponibilidad')}\n"
             f"- Integrantes: {', '.join(epk.get('integrantes', []))}\n"
             f"- Rider Técnico: {epk.get('rider_tecnico', {}).get('descripcion')}\n"
+            f"- Contacto oficial de la banda para cerrar bolos: {c_nombre} ({c_rol}) - Teléfono/WhatsApp: {c_telefono}\n"
             f"- Enlaces:\n"
             f"  * Spotify: {epk.get('enlaces', {}).get('spotify')}\n"
             f"  * YouTube: {epk.get('enlaces', {}).get('youtube_directo')}\n"
-            f"  * Dossier / Rider PDF: {epk.get('enlaces', {}).get('dossier_epk')}\n"
+            f"  * Dossier / Rider PDF: {epk.get('enlaces', {}).get('dossier_epk')}\n\n"
+            "REGLAS OBLIGATORIAS DE NEGOCIACIÓN:\n"
+            "1. DISCLOSURE E IDENTIDAD: Debes firmar siempre y únicamente como 'Bakandeya Virtual Manager' (o indicar de forma natural al final que eres el asistente de inteligencia artificial de la banda).\n"
+            f"2. INTERVENCIÓN HUMANA OBLIGATORIA: Nunca aceptes formalmente una oferta final, un caché definitivo o un contrato de forma vinculante por ti mismo. Deja siempre claro que los detalles finales del acuerdo deben ser confirmados de forma directa y humana por {c_nombre}, {c_rol}.\n"
+            f"3. PROPUESTA DE CONTACTO TELEFÓNICO EXCLUSIVO: Ofrece siempre de manera proactiva al programador del local la posibilidad de llamar o escribir por teléfono/WhatsApp exclusivamente a {c_nombre} ({c_telefono}) para concretar y cerrar los detalles. NO utilices el nombre de Jose (Filgue) para las llamadas o contacto, dirígelos únicamente a {c_nombre}."
         )
         
         prompt = (
@@ -157,10 +168,11 @@ def responder_leads_interesados():
             f"\"\"\"\n{cuerpo_respuesta}\n\"\"\"\n\n"
             f"Escribe un email de respuesta adaptado:\n"
             f"1. Agradece su interés y responde a sus dudas o propuestas de manera clara y profesional.\n"
-            f"2. Si preguntan por caché o dinero, mantén la postura del EPK de negociar según aforo y condiciones, pero propón un rango razonable o pregunta qué condiciones de taquilla/caché manejan normalmente.\n"
-            f"3. Si proponen fecha o disponibilidad, confirma que tenemos flexibilidad en los fines de semana y propón evaluar fechas concretas.\n"
+            f"2. Si preguntan por caché o dinero, mantén la postura del EPK de negociar según aforo y condiciones, pero propón un rango razonable o pregunta qué condiciones de taquilla/caché manejan normalmente, recordando que {c_nombre} validará la oferta definitiva.\n"
+            f"3. Si proponen fecha o disponibilidad, confirma que tenemos flexibilidad en los fines de semana y propón evaluar fechas concretas, indicando que pueden hablar con {c_nombre} directamente.\n"
             f"4. Mantén la propuesta corta (máximo 3 párrafos), profesional, animada y orientada a cerrar el bolo.\n"
-            f"5. Devuelve ÚNICAMENTE el cuerpo del email redactado, sin asunto, sin introducciones y sin firmar con marcadores vacíos (puedes firmar como 'Filgue, de Bakandeya' o similar)."
+            f"5. Invítales obligatoriamente a contactar por teléfono o escribir por WhatsApp a {c_nombre} al número literal {c_telefono} para concretar detalles.\n"
+            f"6. Firma obligatoriamente como 'Bakandeya Virtual Manager'. Devuelve ÚNICAMENTE el cuerpo del email redactado, sin asunto y sin comentarios adicionales."
         )
         
         cuerpo_respuesta_ia = generar_texto_gemini(prompt, system_instruction=instruccion_sistema, temperature=0.7)

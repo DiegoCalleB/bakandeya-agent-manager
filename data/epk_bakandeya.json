@@ -30,5 +30,10 @@
     "canales_estimados": 6
   },
   "cache_objetivo": "A convenir (rango sugerido: 800€ - 1500€ dependiendo del aforo, gastos de desplazamiento y tipo de evento)",
-  "disponibilidad": "Disponible para contratación nacional e internacional. Flexibilidad los fines de semana y temporada de festivales."
+  "disponibilidad": "Disponible para contratación nacional e internacional. Flexibilidad los fines de semana y temporada de festivales.",
+  "contacto": {
+    "nombre": "Diego",
+    "telefono": "+34 660107178",
+    "rol": "Manager de la banda"
+  }
 }

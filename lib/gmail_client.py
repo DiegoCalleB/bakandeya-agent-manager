@@ -1,7 +1,10 @@
 import os
 import base64
 import json
+import mimetypes
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
@@ -34,9 +37,18 @@ def obtener_servicio_gmail():
         creds = Credentials.from_authorized_user_file(token_path, SCOPES)
         
     if not creds or not creds.valid:
+        refrescado = False
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+                refrescado = True
+            except Exception as e:
+                # El refresh token puede quedar revocado/caducado (p. ej. apps en estado
+                # "Testing" en Google Cloud Console expiran el refresh token a los 7 días).
+                # En vez de reventar aquí, caemos al login interactivo de abajo para renovarlo.
+                print(f"[gmail_client.py] No se pudo refrescar el token ({e}). Pidiendo login interactivo de nuevo...")
+
+        if not refrescado:
             credentials_path = os.getenv("GMAIL_CREDENTIALS_PATH", "credentials.json")
             if not os.path.exists(credentials_path):
                 raise FileNotFoundError(
@@ -52,20 +64,21 @@ def obtener_servicio_gmail():
 
     return build('gmail', 'v1', credentials=creds)
 
-def enviar_email(destinatario, asunto, cuerpo_texto):
+def enviar_email(destinatario, asunto, cuerpo_texto, ruta_adjunto=None):
     """
-    Envía un email plano usando el servicio de Gmail o lo guarda localmente si está en modo simulado.
+    Envía un email (HTML con fallback en texto plano, firma con iconos, adjunto opcional)
+    directamente vía la API de Gmail, sin pasar por un borrador. Útil para probar el
+    renderizado real sin depender de que Gmail reconstruya el mensaje al reenviarlo desde
+    la interfaz tras crear un borrador por API.
     """
     if es_modo_simulado():
         print(f"[gmail_client.py] MODO SIMULADO: Redirigiendo envío de email a creación de borrador local...")
-        return crear_borrador(destinatario, asunto, cuerpo_texto)
-        
+        return crear_borrador(destinatario, asunto, cuerpo_texto, ruta_adjunto=ruta_adjunto)
+
     try:
         service = obtener_servicio_gmail()
-        mensaje = MIMEText(cuerpo_texto)
-        mensaje['to'] = destinatario
-        mensaje['subject'] = asunto
-        
+        mensaje = _construir_mensaje(destinatario, asunto, cuerpo_texto, ruta_adjunto=ruta_adjunto)
+
         # Codificar el mensaje en base64url
         raw_message = base64.urlsafe_b64encode(mensaje.as_bytes()).decode('utf-8')
         body = {'raw': raw_message}
@@ -77,9 +90,63 @@ def enviar_email(destinatario, asunto, cuerpo_texto):
         print(f"Error al enviar el email a {destinatario}: {e}")
         return None
 
-def crear_borrador(destinatario, asunto, cuerpo_texto, thread_id=None, in_reply_to=None):
+def _cargar_epk_para_firma():
+    """
+    Lectura propia y aislada del EPK, solo para construir la firma con iconos de redes.
+    Se duplica a propósito en vez de importar de un agente: gmail_client es una lib genérica
+    y no debe depender de agents/*.
+    """
+    ruta_epk = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "epk_bakandeya.json")
+    try:
+        with open(ruta_epk, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _adjuntar_archivo(mensaje, ruta_adjunto):
+    tipo_mime, _ = mimetypes.guess_type(ruta_adjunto)
+    tipo_mime = tipo_mime or "application/octet-stream"
+    with open(ruta_adjunto, "rb") as f:
+        adjunto = MIMEApplication(f.read(), _subtype=tipo_mime.split("/")[-1])
+    adjunto.add_header("Content-Disposition", "attachment", filename=os.path.basename(ruta_adjunto))
+    mensaje.attach(adjunto)
+
+
+def _construir_mensaje(destinatario, asunto, cuerpo_texto, ruta_adjunto=None):
+    """
+    Construye el mensaje MIME en HTML (con fallback en texto plano) + firma con iconos de
+    redes sociales (imagen alojada en GitHub Pages, ver lib/email_html.py — las imágenes
+    embebidas por Content-ID no sobreviven al reenvío de un borrador desde la interfaz de
+    Gmail) + adjunto opcional (p. ej. el PDF del dossier real, en vez de depender de un link
+    externo con permisos de Drive que puede no ser público). Estructura: multipart/mixed
+    [ multipart/alternative (texto plano + HTML), adjunto ].
+    """
+    from lib.email_html import texto_a_html, construir_firma_html
+
+    epk = _cargar_epk_para_firma()
+    cuerpo_html = texto_a_html(cuerpo_texto) + construir_firma_html(epk)
+
+    alternativa = MIMEMultipart("alternative")
+    alternativa.attach(MIMEText(cuerpo_texto, "plain"))
+    alternativa.attach(MIMEText(cuerpo_html, "html"))
+
+    if ruta_adjunto and os.path.exists(ruta_adjunto):
+        mensaje = MIMEMultipart("mixed")
+        mensaje.attach(alternativa)
+        _adjuntar_archivo(mensaje, ruta_adjunto)
+    else:
+        mensaje = alternativa
+
+    mensaje['to'] = destinatario
+    mensaje['subject'] = asunto
+    return mensaje
+
+
+def crear_borrador(destinatario, asunto, cuerpo_texto, thread_id=None, in_reply_to=None, ruta_adjunto=None):
     """
     Crea un borrador (draft) en Gmail o lo guarda localmente en un archivo HTML en modo simulado.
+    `ruta_adjunto` (opcional): ruta a un archivo local a adjuntar (p. ej. el dossier en PDF).
     """
     if es_modo_simulado():
         print(f"[gmail_client.py] MODO SIMULADO: Guardando borrador local para {destinatario}...")
@@ -151,6 +218,7 @@ def crear_borrador(destinatario, asunto, cuerpo_texto, thread_id=None, in_reply_
             <div class="header-line"><strong>Asunto:</strong> {asunto}</div>
             {f'<div class="header-line"><strong>Thread ID:</strong> {thread_id}</div>' if thread_id else ''}
             {f'<div class="header-line"><strong>In-Reply-To:</strong> {in_reply_to}</div>' if in_reply_to else ''}
+            {f'<div class="header-line"><strong>Adjunto:</strong> {os.path.basename(ruta_adjunto)}</div>' if ruta_adjunto else ''}
         </div>
         <div class="email-body">{cuerpo_html}</div>
     </div>
@@ -168,13 +236,11 @@ def crear_borrador(destinatario, asunto, cuerpo_texto, thread_id=None, in_reply_
             
     try:
         service = obtener_servicio_gmail()
-        mensaje = MIMEText(cuerpo_texto)
-        mensaje['to'] = destinatario
-        mensaje['subject'] = asunto
+        mensaje = _construir_mensaje(destinatario, asunto, cuerpo_texto, ruta_adjunto=ruta_adjunto)
         if in_reply_to:
             mensaje['In-Reply-To'] = in_reply_to
             mensaje['References'] = in_reply_to
-        
+
         # Codificar el mensaje en base64url
         raw_message = base64.urlsafe_b64encode(mensaje.as_bytes()).decode('utf-8')
         message_body = {'raw': raw_message}
@@ -189,6 +255,23 @@ def crear_borrador(destinatario, asunto, cuerpo_texto, thread_id=None, in_reply_
     except Exception as e:
         print(f"Error al crear el borrador para {destinatario}: {e}")
         return None
+
+def marcar_como_leido(mensaje_id):
+    """
+    Quita la etiqueta UNREAD de un mensaje ya procesado por lector_bandeja.py. Sin esto,
+    `leer_respuestas(query="is:unread")` volvería a devolver el mismo email en cada ejecución
+    del cron (cada 2h) hasta que Diego lo abriera manualmente en Gmail.
+    """
+    if es_modo_simulado():
+        return True
+    try:
+        service = obtener_servicio_gmail()
+        service.users().messages().modify(userId='me', id=mensaje_id, body={'removeLabelIds': ['UNREAD']}).execute()
+        return True
+    except Exception as e:
+        print(f"Error al marcar como leído el mensaje {mensaje_id}: {e}")
+        return False
+
 
 def leer_respuestas(query="is:unread"):
     """

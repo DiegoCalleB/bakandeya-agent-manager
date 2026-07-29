@@ -35,6 +35,8 @@ UMBRALES_POR_CAMPO = {
     "instagram": "alta",
     "genero": "media",
     "aforo": "media",
+    "contacto_nombre": "media",
+    "contexto_extra": "media",
 }
 
 
@@ -166,7 +168,9 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
             "3. instagram: El usuario de Instagram oficial del ayuntamiento o de su concejalía de cultura (ej: @nombre o nombre_usuario).\n"
             "4. website: El enlace a la web oficial del ayuntamiento o portal de festejos/turismo.\n"
             "5. genero: Pon siempre 'Varios / Festivo'.\n"
-            "6. aforo: Pon siempre null."
+            "6. aforo: Pon siempre null.\n"
+            "7. contacto_nombre: El nombre y apellido de la persona responsable (concejal/a de cultura, festejos o juventud) SOLO si aparece explícitamente nombrada en el texto. Si no aparece, null.\n"
+            "8. contexto_extra: Una frase breve (máx. 20 palabras) sobre qué tipo de eventos, fiestas patronales o programación cultural organiza este ayuntamiento, basada SOLO en lo que dice el texto. Si no hay información concreta, null."
         )
     elif tipo == "festival":
         objetivo_contacto = (
@@ -176,7 +180,9 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
             "3. instagram: El usuario de Instagram oficial del festival (ej: @nombre o nombre_usuario).\n"
             "4. website: El enlace a la web oficial del festival.\n"
             "5. genero: El estilo o género musical predominante del festival (ej: 'Indie / Pop', 'Electrónica', 'Folk', etc.).\n"
-            "6. aforo: La capacidad o aforo del recinto del festival (número entero, o null si no se menciona)."
+            "6. aforo: La capacidad o aforo del recinto del festival (número entero, o null si no se menciona).\n"
+            "7. contacto_nombre: El nombre y apellido de la persona de programación, dirección artística o booking SOLO si aparece explícitamente nombrada en el texto. Si no aparece, null.\n"
+            "8. contexto_extra: Una frase breve (máx. 20 palabras) sobre el ambiente, edición actual, artistas destacados o carácter del festival, basada SOLO en lo que dice el texto. Si no hay información concreta, null."
         )
     else:
         objetivo_contacto = (
@@ -186,7 +192,9 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
             "3. instagram: El usuario de Instagram (ej: @nombre o nombre_usuario).\n"
             "4. website: El enlace a su canal oficial real (puede ser su web oficial .com/.es, o su página oficial de Facebook o de Instagram si no tiene web independiente).\n"
             "5. genero: El estilo o género musical habitual de la sala, indicando los estilos predominantes específicos si se mencionan en los resultados (ej: 'Rock / Metal', 'Balkan / Ska / Reggae', 'Indie Pop', etc. Evita poner simplemente 'Varios' a menos que no exista otra información).\n"
-            "6. aforo: El aforo de la sala (capacidad máxima de personas) si se menciona en los resultados (número entero, o null si no se menciona)."
+            "6. aforo: El aforo de la sala (capacidad máxima de personas) si se menciona en los resultados (número entero, o null si no se menciona).\n"
+            "7. contacto_nombre: El nombre y apellido de la persona programadora o responsable de booking SOLO si aparece explícitamente nombrada en el texto. Si no aparece, null.\n"
+            "8. contexto_extra: Una frase breve (máx. 20 palabras) sobre qué tipo de conciertos/eventos organiza habitualmente la sala, su ambiente o su público, basada SOLO en lo que dice el texto. Si no hay información concreta, null."
         )
 
     prompt = (
@@ -208,7 +216,9 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
         "  \"instagram\": {\"valor\": \"instagram o null\", \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
         "  \"website\":   {\"valor\": \"url o null\",       \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
         "  \"genero\":    {\"valor\": \"genero o null\",    \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
-        "  \"aforo\":     {\"valor\": \"aforo o null\",     \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"}\n"
+        "  \"aforo\":     {\"valor\": \"aforo o null\",     \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
+        "  \"contacto_nombre\": {\"valor\": \"nombre o null\", \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
+        "  \"contexto_extra\":  {\"valor\": \"frase breve o null\", \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"}\n"
         "}"
     )
 
@@ -228,7 +238,7 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
         return {}
 
     aceptados, sugerencias = _procesar_campos_extraidos(
-        data, campos=["email", "telefono", "instagram", "website", "genero", "aforo"],
+        data, campos=["email", "telefono", "instagram", "website", "genero", "aforo", "contacto_nombre", "contexto_extra"],
         umbrales_por_campo=UMBRALES_POR_CAMPO,
     )
     if sugerencias:
@@ -301,19 +311,25 @@ def extraer_datos_contacto(texto, url_origen, tipo="sala"):
         objetivo_contacto = (
             "1. Para el aforo: pon null (los ayuntamientos no tienen aforo fijo, aunque puedes ignorarlo).\n"
             "2. Para el email: extrae el correo de la concejalía de cultura, de festejos, de juventud o el general del ayuntamiento (ej: cultura@..., festejos@..., concejalia.cultura@..., info@...).\n"
-            "3. Para el genero: extrae o infiere el tipo de música (pon 'Varios / Festivo')."
+            "3. Para el genero: extrae o infiere el tipo de música (pon 'Varios / Festivo').\n"
+            "4. Para contacto_nombre: nombre y apellido del/de la concejal/a de cultura, festejos o juventud SOLO si aparece literal en el texto. Si no, null.\n"
+            "5. Para contexto_extra: una frase breve (máx. 20 palabras) sobre las fiestas patronales o programación cultural del municipio, basada solo en el texto. Si no hay info concreta, null."
         )
     elif tipo == "festival":
         objetivo_contacto = (
             "1. Para el aforo: busca la capacidad del recinto del festival o asistencia estimada. Si es numérico ponlo como integer, si no pon null.\n"
             "2. Para el email: extrae el correo de contratación, booking, propuestas artísticas, producción o el de información general.\n"
-            "3. Para el genero: extrae o infiere el estilo musical predominante del festival, indicando los géneros específicos (ej: 'Indie Pop', 'Folk Rock', etc.)."
+            "3. Para el genero: extrae o infiere el estilo musical predominante del festival, indicando los géneros específicos (ej: 'Indie Pop', 'Folk Rock', etc.).\n"
+            "4. Para contacto_nombre: nombre y apellido de la persona de programación, dirección artística o booking SOLO si aparece literal en el texto. Si no, null.\n"
+            "5. Para contexto_extra: una frase breve (máx. 20 palabras) sobre el ambiente, edición actual o artistas destacados del festival, basada solo en el texto. Si no hay info concreta, null."
         )
     else:
         objetivo_contacto = (
             "1. Para el aforo: busca menciones del tamaño de la sala, capacidad, limitación de personas o aforo. Si es numérico ponlo como integer, si no pon null.\n"
             "2. Para el email: extrae solo correos corporativos o de contacto profesional de la sala (ej: programacion@..., info@..., contacto@...).\n"
-            "3. Para el genero: extrae o infiere el estilo o género musical habitual de la sala, detallando los estilos predominantes de forma específica (ej: 'Rock / Metal', 'Balkan / Ska / Reggae', 'Electrónica / Techno', etc. Evita poner 'Varios' a menos que no exista otra información)."
+            "3. Para el genero: extrae o infiere el estilo o género musical habitual de la sala, detallando los estilos predominantes de forma específica (ej: 'Rock / Metal', 'Balkan / Ska / Reggae', 'Electrónica / Techno', etc. Evita poner 'Varios' a menos que no exista otra información).\n"
+            "4. Para contacto_nombre: nombre y apellido de la persona programadora o responsable de booking SOLO si aparece literal en el texto. Si no, null.\n"
+            "5. Para contexto_extra: una frase breve (máx. 20 palabras) sobre qué tipo de conciertos organiza habitualmente la sala, su ambiente o su público, basada solo en el texto. Si no hay info concreta, null."
         )
 
     prompt = (
@@ -332,7 +348,9 @@ def extraer_datos_contacto(texto, url_origen, tipo="sala"):
         '  "telefono":  {"valor": "+34... o null",          "confianza": "alta|media|baja", "fuente": "texto o null"},\n'
         '  "instagram": {"valor": "@usuario o null",        "confianza": "alta|media|baja", "fuente": "texto o null"},\n'
         '  "aforo":     {"valor": 300,                       "confianza": "alta|media|baja", "fuente": "texto o null"},\n'
-        '  "genero":    {"valor": "genero o null",          "confianza": "alta|media|baja", "fuente": "texto o null"}\n'
+        '  "genero":    {"valor": "genero o null",          "confianza": "alta|media|baja", "fuente": "texto o null"},\n'
+        '  "contacto_nombre": {"valor": "nombre o null",    "confianza": "alta|media|baja", "fuente": "texto o null"},\n'
+        '  "contexto_extra":  {"valor": "frase breve o null", "confianza": "alta|media|baja", "fuente": "texto o null"}\n'
         "}"
     )
 
@@ -359,7 +377,7 @@ def extraer_datos_contacto(texto, url_origen, tipo="sala"):
         return {}
 
     aceptados, sugerencias = _procesar_campos_extraidos(
-        data, campos=["email", "telefono", "instagram", "aforo", "genero"],
+        data, campos=["email", "telefono", "instagram", "aforo", "genero", "contacto_nombre", "contexto_extra"],
         umbrales_por_campo=UMBRALES_POR_CAMPO,
     )
     if sugerencias:
@@ -426,7 +444,7 @@ def procesar_un_lead(lead):
     # Datos de confianza insuficiente: se juntan aquí para dejarlos en 'notas' como pistas
     # a verificar, nunca en los campos verificados de la Sheet.
     sugerencias_totales = []
-    CAMPOS = ["email", "telefono", "instagram", "website", "genero", "aforo"]
+    CAMPOS = ["email", "telefono", "instagram", "website", "genero", "aforo", "contacto_nombre", "contexto_extra"]
 
     # 1. Una única búsqueda amplia + extracción estructurada desde snippets.
     # Antes había hasta 4 búsquedas y 6 llamadas a la IA por lead; ahora arrancamos con 1
@@ -507,13 +525,15 @@ def procesar_un_lead(lead):
     web = _limpiar(datos.get("website"))
     genero = _limpiar(datos.get("genero"))
     aforo = datos.get("aforo")
+    contacto_nombre = _limpiar(datos.get("contacto_nombre"))
+    contexto_extra = _limpiar(datos.get("contexto_extra"))
 
     # Validar formato básico de email
     if email and "@" not in email:
         email = None
 
-    if email or telefono or instagram or web or genero or aforo:
-        print(f"[scout.py] [SUCCESS] Datos encontrados - Email: {email or 'N/A'}, Teléfono: {telefono or 'N/A'}, Instagram: {instagram or 'N/A'}, Web: {web or 'N/A'}, Género: {genero or 'N/A'}, Aforo: {aforo or 'N/A'}")
+    if email or telefono or instagram or web or genero or aforo or contacto_nombre or contexto_extra:
+        print(f"[scout.py] [SUCCESS] Datos encontrados - Email: {email or 'N/A'}, Teléfono: {telefono or 'N/A'}, Instagram: {instagram or 'N/A'}, Web: {web or 'N/A'}, Género: {genero or 'N/A'}, Aforo: {aforo or 'N/A'}, Contacto: {contacto_nombre or 'N/A'}")
         
         notas_previas = lead.get("notas") or ""
         nuevas_notas = (
@@ -546,11 +566,16 @@ def procesar_un_lead(lead):
             datos_actualizar["instagram"] = instagram
         if genero and (not lead.get("genero") or lead.get("genero").strip() == ""):
             datos_actualizar["genero"] = genero
-            
+
         if aforo and (not lead.get("aforo") or int(lead.get("aforo")) == 0):
             print(f"[scout.py] Aforo detectado: {aforo} personas.")
             datos_actualizar["aforo"] = aforo
-            
+
+        if contacto_nombre and not lead.get("contacto_nombre"):
+            datos_actualizar["contacto_nombre"] = contacto_nombre
+        if contexto_extra and not lead.get("contexto_extra"):
+            datos_actualizar["contexto_extra"] = contexto_extra
+
         res = sheets.actualizar_datos_lead(lead_id, datos_actualizar)
 
         # Coordinación de estados: si tras enriquecer sigue SIN email, el redactor no puede
@@ -559,6 +584,12 @@ def procesar_un_lead(lead):
         email_final = lead.get("email_contacto") or email
         if not email_final:
             estados.transicionar(lead, estados.SIN_CONTACTO)
+        elif lead.get("estado") == estados.SIN_CONTACTO:
+            # Recuperado: antes no tenía contacto y ahora sí. El grafo permite SIN_CONTACTO ->
+            # NUEVO explícitamente para este caso (ver comentario en lib/estados.py); sin esta
+            # transición el lead se queda enterrado en 'sin_contacto' y el redactor nunca lo ve.
+            print(f"[scout.py] Email recuperado para un lead en 'sin_contacto': reactivando a 'nuevo'.")
+            estados.transicionar(lead, estados.NUEVO)
             
         if res:
             return {
@@ -570,7 +601,9 @@ def procesar_un_lead(lead):
                 "instagram": instagram or "",
                 "web": web or "",
                 "genero": genero or "",
-                "aforo": aforo or ""
+                "aforo": aforo or "",
+                "contacto_nombre": contacto_nombre or "",
+                "contexto_extra": contexto_extra or ""
             }
     else:
         print(f"[scout.py] [ERROR] No se logró extraer ningún dato de contacto para '{nombre_sala}'.")
@@ -580,11 +613,18 @@ def procesar_un_lead(lead):
         if not lead.get("tipo"):
             sheets.actualizar_datos_lead(lead_id, {"tipo": tipo})
 
-        # Sin ningún contacto: a 'sin_contacto' (terminal), fuera del bucle de reintentos.
-        estados.transicionar(
-            lead, estados.SIN_CONTACTO,
-            notas=f"{notas_previas} | Scout: búsqueda exhaustiva sin resultados de contacto.",
-        )
+        # No encontrar nada NUEVO esta vez no significa que el lead no tenga ya contacto: si
+        # venía con email_contacto de una pasada anterior, no lo tiramos a 'sin_contacto' (eso
+        # borraría progreso real, como pasó con un lead que ya tenía email y quedó degradado
+        # solo porque este reintento concreto no encontró nada más).
+        if lead.get("email_contacto"):
+            print(f"[scout.py] '{nombre_sala}' ya tenía contacto guardado; se conserva el estado.")
+        else:
+            # Sin ningún contacto: a 'sin_contacto' (terminal), fuera del bucle de reintentos.
+            estados.transicionar(
+                lead, estados.SIN_CONTACTO,
+                notas=f"{notas_previas} | Scout: búsqueda exhaustiva sin resultados de contacto.",
+            )
     return None
 
 

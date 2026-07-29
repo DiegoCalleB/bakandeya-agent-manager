@@ -56,8 +56,15 @@ def mock_db():
         }
     ]
 
+@pytest.fixture
+def hilos_registrados():
+    """
+    Lista mutable en memoria para acumular los mensajes registrados vía sheets.registrar_mensaje_hilo.
+    """
+    return []
+
 @pytest.fixture(autouse=True)
-def mock_sheets_api(mocker, mock_db):
+def mock_sheets_api(mocker, mock_db, hilos_registrados):
     """
     Mockea automáticamente todas las funciones del módulo lib.sheets para usar la base de datos en memoria.
     """
@@ -107,12 +114,21 @@ def mock_sheets_api(mocker, mock_db):
             mock_db.append(row_dict)
         return True
 
+    def mock_registrar_mensaje_hilo(lead_id, nombre_sala, fecha, remitente, remitente_nombre, asunto, mensaje, mensaje_id=None):
+        hilos_registrados.append({
+            "lead_id": lead_id, "nombre_sala": nombre_sala, "fecha": fecha,
+            "remitente": remitente, "remitente_nombre": remitente_nombre,
+            "asunto": asunto, "mensaje": mensaje, "mensaje_id": mensaje_id
+        })
+        return True
+
     mocker.patch("lib.sheets.obtener_leads", side_effect=mock_obtener_leads)
     mocker.patch("lib.sheets.actualizar_estado_lead", side_effect=mock_actualizar_estado_lead)
     mocker.patch("lib.sheets.actualizar_datos_lead", side_effect=mock_actualizar_datos_lead)
     mocker.patch("lib.sheets.crear_leads", side_effect=mock_crear_leads)
+    mocker.patch("lib.sheets.registrar_mensaje_hilo", side_effect=mock_registrar_mensaje_hilo)
     mocker.patch("lib.sheets.obtener_cliente_sheets", return_value=None)
-    
+
     return mock_db
 
 @pytest.fixture
@@ -127,19 +143,21 @@ def mock_gmail_api(mocker, emails_enviados):
     """
     Mockea automáticamente el envío y la lectura de correos en lib.gmail_client.
     """
-    def mock_enviar_email(destinatario, asunto, cuerpo_texto):
+    def mock_enviar_email(destinatario, asunto, cuerpo_texto, ruta_adjunto=None):
         emails_enviados.append({
             "destinatario": destinatario,
             "asunto": asunto,
-            "cuerpo": cuerpo_texto
+            "cuerpo": cuerpo_texto,
+            "ruta_adjunto": ruta_adjunto
         })
         return {"id": f"msg_mock_{len(emails_enviados)}"}
 
-    def mock_crear_borrador(destinatario, asunto, cuerpo_texto):
+    def mock_crear_borrador(destinatario, asunto, cuerpo_texto, thread_id=None, in_reply_to=None, ruta_adjunto=None):
         emails_enviados.append({
             "destinatario": destinatario,
             "asunto": asunto,
-            "cuerpo": cuerpo_texto
+            "cuerpo": cuerpo_texto,
+            "ruta_adjunto": ruta_adjunto
         })
         return {"id": f"draft_mock_{len(emails_enviados)}"}
 
@@ -157,8 +175,9 @@ def mock_gmail_api(mocker, emails_enviados):
     mocker.patch("lib.gmail_client.enviar_email", side_effect=mock_enviar_email)
     mocker.patch("lib.gmail_client.crear_borrador", side_effect=mock_crear_borrador)
     mocker.patch("lib.gmail_client.leer_respuestas", side_effect=mock_leer_respuestas)
+    mocker.patch("lib.gmail_client.marcar_como_leido", return_value=True)
     mocker.patch("lib.gmail_client.obtener_servicio_gmail", return_value=None)
-    
+
     return emails_enviados
 
 @pytest.fixture(autouse=True)

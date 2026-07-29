@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 # Asegurar que el directorio raíz está en el path para las importaciones de lib
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -8,6 +9,20 @@ import lib.gmail_client as gmail_client
 import lib.gemini_client as gemini_client
 import lib.telegram as telegram
 import lib.estados as estados
+
+_RE_NOMBRE_REMITENTE = re.compile(r'^"?([^"<]+?)"?\s*<[^>]+>$')
+
+
+def _extraer_nombre_remitente(remitente):
+    """
+    Extrae el nombre visible de una cabecera 'From' tipo 'Nombre Apellido <email@dominio.com>'.
+    Si no hay nombre (solo la dirección), devuelve el email tal cual.
+    """
+    if not remitente:
+        return ""
+    m = _RE_NOMBRE_REMITENTE.match(remitente.strip())
+    return m.group(1).strip() if m else remitente.strip()
+
 
 def procesar_bandeja_entrada():
     """
@@ -86,6 +101,14 @@ def procesar_bandeja_entrada():
             notas = f"Respuesta recibida ({respuesta.get('fecha')}): {extracto_respuesta}..."
             
             estados.transicionar(lead_asociado, categoria, notas=notas)
+
+            sheets.registrar_mensaje_hilo(
+                lead_id, nombre_sala, respuesta.get("fecha"),
+                remitente="sala", remitente_nombre=_extraer_nombre_remitente(remitente),
+                asunto=respuesta.get("asunto"), mensaje=cuerpo, mensaje_id=respuesta.get("id")
+            )
+            gmail_client.marcar_como_leido(respuesta.get("id"))
+
             telegram.enviar_notificacion_telegram(
                 f"🔔 Respuesta de *{nombre_sala}* clasificada como *{categoria.upper()}*\n"
                 f"📝 Resumen: {extracto_respuesta}..."

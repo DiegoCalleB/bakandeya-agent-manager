@@ -3,27 +3,32 @@
   "origen": "Madrid",
   "estilo": "Electrobasureo (Fusión de electrónica, percusión reciclada, beatbox e instrumentos acústicos)",
   "integrantes": [
-    "Jon",
-    "Jose (Filgue)",
-    "Elyar",
-    "Raúl"
+    "Jon Quel (voz, guitarra, beatbox, percusión)",
+    "José Filgueira (percusión construida con materiales 100% reciclados — la 'luthería urbana' de la banda)",
+    "Elyar Pashang (percusión étnica original: handpan, darbuka, daf — instrumentos NO reciclados)",
+    "Raúl Pérez (violín)"
   ],
+  "nota_precision_instrumentos": "IMPORTANTE: solo la percusión de José Filgueira está construida con materiales reciclados. Elyar Pashang toca handpan y percusión étnica (darbuka, daf) — instrumentos originales, no reciclados. No atribuir 'reciclado' a los instrumentos de Elyar.",
   "influencias": [
     "reggae",
     "música balcánica",
     "klezmer",
     "jazz",
     "música oriental",
+    "clásico",
     "drum & bass",
     "techno"
   ],
+  "trayectoria_destacada": "Miembros de Bakandeya han actuado con Cirque du Soleil y forman parte de la compañía internacional de percusión Stomp (José Filgueira), giran actualmente con la compañía internacional de percusión y teatro Toompak (Jon Quel), y han tocado en festivales internacionales de handpan y música étnica como Singading (Barcelona) o Al-Mutamid (Portugal) (Elyar Pashang).",
   "descripcion_corta": "Una banda que transforma la electrónica, la percusión y la improvisación en una experiencia vibrante y festiva. A partir de una combinación de beatbox, loops en vivo, violín y percusiones construidas con materiales reciclados, el grupo desarrolla un lenguaje propio donde conviven influencias del reggae, la música balcánica, el jazz, el klezmer y la electrónica contemporánea.",
-  "biografia_completa": "Bakandeya es una banda afincada en Madrid que desarrolla una propuesta musical propia basada en la fusión de electrónica, percusión reciclada, beatbox e instrumentos acústicos. La agrupación define su estilo como 'electrobasureo', una combinación de ritmos electrónicos y percusiones construidas a partir de materiales reutilizados. Reúne influencias procedentes de tradiciones musicales muy diversas, entre ellas el reggae, la música balcánica, el klezmer, el jazz, la música oriental, el drum & bass y el techno. Esta variedad de referencias se traduce en una propuesta dinámica y difícil de encasillar, caracterizada por la improvisación, la riqueza rítmica y una fuerte conexión con el público.",
+  "biografia_completa": "Bakandeya es una banda afincada en Madrid que desarrolla una propuesta musical propia basada en la fusión de electrónica, percusión reciclada, beatbox e instrumentos acústicos. La agrupación define su estilo como 'electrobasureo', una combinación de ritmos electrónicos y percusiones construidas a partir de materiales reutilizados. Reúne influencias procedentes de tradiciones musicales muy diversas, entre ellas el reggae, la música balcánica, el klezmer, el jazz, la música oriental, el clásico, el drum & bass y el techno. Esta variedad de referencias se traduce en una propuesta dinámica y difícil de encasillar, caracterizada por la improvisación, la riqueza rítmica y una fuerte conexión con el público.",
   "enlaces": {
-    "spotify": "https://open.spotify.com/artist/tu_id_de_artista",
-    "youtube_directo": "https://www.youtube.com/watch?v=tu_video_directo",
+    "youtube_teaser_aca2026": "https://www.youtube.com/watch?v=y94Noc2qaSM",
+    "youtube_bakandeya_1": "https://www.youtube.com/watch?v=EbpDhwa56xs",
+    "youtube_perfil": "https://www.youtube.com/@Bakandeya",
     "instagram": "https://www.instagram.com/bakandeya",
-    "dossier_epk": "https://drive.google.com/file/d/tu_dossier_pdf"
+    "tik_tok": "https://www.tiktok.com/@bakandeya",
+    "dossier_epk": "https://drive.google.com/file/d/1mO6DG9rCWUYY_dB00ZoyK68Yeu45V1XR/view?usp=drive_link"
   },
   "rider_tecnico": {
     "descripcion": "Loops en vivo, violín (acústico con previo/pastilla), beatbox (micro vocal dinámico), percusión reciclada (varias salidas balanceadas). Requiere envío a mesa de mezclas para monitorización y PA.",
@@ -32,8 +37,9 @@
   "cache_objetivo": "A convenir (rango sugerido: 800€ - 1500€ dependiendo del aforo, gastos de desplazamiento y tipo de evento)",
   "disponibilidad": "Disponible para contratación nacional e internacional. Flexibilidad los fines de semana y temporada de festivales.",
   "contacto": {
-    "nombre": "Diego",
-    "telefono": "+34 660107178",
-    "rol": "Manager de la banda"
+    "nombre": "Bakandeya",
+    "email": "Bakandeya@gmail.com",
+    "telefono": "+34 652938521",
+    "rol": "Contacto oficial de la banda"
   }
 }

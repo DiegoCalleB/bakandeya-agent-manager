@@ -42,7 +42,7 @@ def test_redactor_flow(mock_sheets_api):
     assert lead_003["estado"] == "nuevo"
     assert lead_003["pitch_generado"] == ""
 
-def test_enviador_flow(mock_sheets_api, emails_enviados):
+def test_enviador_flow(mock_sheets_api, emails_enviados, hilos_registrados):
     """
     Verifica que el enviador tome leads en estado 'aprobado', envíe el email
     y los pase a 'esperando_respuesta'.
@@ -51,17 +51,23 @@ def test_enviador_flow(mock_sheets_api, emails_enviados):
     lead_001 = next(l for l in mock_sheets_api if l["id"] == "lead_001")
     lead_001["estado"] = "aprobado"
     lead_001["pitch_generado"] = "Pitch de prueba aprobado"
-    
+
     enviados = enviar_leads_aprobados()
     assert enviados == 1
-    
+
     # Comprobar estado final y email en mock
     assert lead_001["estado"] == "esperando_respuesta"
     assert len(emails_enviados) == 1
     assert emails_enviados[0]["destinatario"] == "conciertos@salaelsol.com"
     assert emails_enviados[0]["cuerpo"] == "Pitch de prueba aprobado"
 
-def test_lector_bandeja_flow(mock_sheets_api):
+    # El envío también debe quedar registrado en el hilo de conversación del lead
+    assert len(hilos_registrados) == 1
+    assert hilos_registrados[0]["lead_id"] == "lead_001"
+    assert hilos_registrados[0]["remitente"] == "banda"
+    assert hilos_registrados[0]["mensaje"] == "Pitch de prueba aprobado"
+
+def test_lector_bandeja_flow(mock_sheets_api, hilos_registrados):
     """
     Verifica que el lector procese respuestas entrantes de Gmail, las
     asocie al lead esperando y actualice el estado a 'interesado'/'negociando'.
@@ -70,13 +76,19 @@ def test_lector_bandeja_flow(mock_sheets_api):
     lead_001 = next(l for l in mock_sheets_api if l["id"] == "lead_001")
     lead_001["estado"] = "esperando_respuesta"
     lead_001["email_contacto"] = "conciertos@salaelsol.com"
-    
+
     procesadas = procesar_bandeja_entrada()
     assert procesadas == 1
-    
+
     # Debería haber cambiado a 'interesado' según el mock de Claude
     assert lead_001["estado"] == "interesado"
     assert "Respuesta recibida" in lead_001["notas"]
+
+    # La respuesta recibida también debe quedar registrada en el hilo, con remitente 'sala'
+    assert len(hilos_registrados) == 1
+    assert hilos_registrados[0]["lead_id"] == "lead_001"
+    assert hilos_registrados[0]["remitente"] == "sala"
+    assert hilos_registrados[0]["mensaje_id"] == "reply_mock_001"
 
 def test_redactor_flow_tipos(mocker, mock_sheets_api):
     """

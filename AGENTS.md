@@ -10,8 +10,7 @@ enviarlas (con aprobación humana) y clasificar las respuestas. No sustituye el 
 Filgue — solo automatiza la parte repetitiva. Todo envío pasa por aprobación humana. Ningún
 contacto se marca "listo para enviar" sin verificación humana de que existe de verdad.
 
-Contexto completo del proyecto (fases, costes, modelo económico): ver `docs/informe_proyecto.md`
-si existe en el repo, o preguntar a Diego.
+Contexto completo del proyecto (fases, costes, modelo económico): ver `docs/informe_proyecto.md`.
 
 ## Fase actual
 

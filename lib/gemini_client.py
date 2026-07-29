@@ -4,10 +4,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Obtener la API key de las variables de entorno
+# Obtener la API key de las variables de entorno.
+# transport="rest": el SDK usa gRPC por defecto, que tiene su propio motor TLS y no pasa por
+# el módulo `ssl` de Python — por eso el bootstrap de `truststore` (ver lib/__init__.py) no lo
+# cubre y falla tras el proxy de inspección corporativo. Con REST, las llamadas van por
+# `requests`/urllib3, que sí usan `ssl` y por tanto sí quedan arregladas por truststore.
 api_key = os.getenv("GEMINI_API_KEY")
 if api_key:
-    genai.configure(api_key=api_key)
+    genai.configure(api_key=api_key, transport="rest")
 
 import time
 

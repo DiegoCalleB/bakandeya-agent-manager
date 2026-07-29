@@ -10,8 +10,7 @@ enviarlas (con aprobación humana) y clasificar las respuestas. No sustituye el 
 Filgue — solo automatiza la parte repetitiva. Todo envío pasa por aprobación humana. Ningún
 contacto se marca "listo para enviar" sin verificación humana de que existe de verdad.
 
-Contexto completo del proyecto (fases, costes, modelo económico): ver `docs/informe_proyecto.md`
-si existe en el repo, o preguntar a Diego.
+Contexto completo del proyecto (fases, costes, modelo económico): ver `docs/informe_proyecto.md`.
 
 ## Fase actual
 
@@ -116,6 +115,8 @@ bakandeya-agent-manager/
 | `pitch_generado` | text | output del Redactor |
 | `fecha_envio` | date | fecha del último envío/borrador, autogenerada por `estados.py` |
 | `fecha_ultima_respuesta` | date | |
+| `contacto_nombre` | string | nombre de la persona de programación/booking, si el Scout lo encuentra literal en la web (confianza `media`+) |
+| `contexto_extra` | text | frase breve sobre qué tipo de eventos/ambiente tiene la sala o festival, extraída de su propia web; usada por el Redactor para personalizar de verdad en vez de solo por género/aforo |
 | `notas` | text | |
 
 ### Esquema de la Google Sheet (hoja `metricas`)
@@ -158,7 +159,7 @@ bakandeya-agent-manager/
 
 _(Actualizar esta sección a medida que avance)_
 
-- [ ] Fase 0 — Contactos, playbook y EPK de Filgue volcados
+- [x] Fase 0 — EPK real de Bakandeya volcado desde el dossier oficial en PDF (bios completas de los 4 integrantes, trayectoria destacada, vídeo, contacto oficial de la banda)
 - [x] `redactor.py` funcionando con EPK real y adaptado a Salas, Festivales y Ayuntamientos con variedad y traducción automática
 - [x] Bug del `ASUNTO:` en `enviador.py` arreglado (el asunto generado ya no se cuela en el cuerpo)
 - [x] `enviador.py` + Gmail OAuth real funcionando y probado (se generó `token.json` y crea borradores en Gmail de verdad)
@@ -171,6 +172,8 @@ _(Actualizar esta sección a medida que avance)_
 - [x] Agente de seguimiento automático (`seguimiento.py` + workflow semanal + auto fecha_envio) funcionando
 - [x] Agente de reporte semanal (`reporte_semanal.py` + workflow semanal) funcionando
 - [x] Agente de finanzas (`agente_finanzas.py` + workflow semanal + auto estimación de costes con Gemini) funcionando
+- [x] Scout enriquece `contacto_nombre` y `contexto_extra` por lead; Redactor los usa para personalizar de verdad (saludo por nombre + gancho real) en vez de solo género/aforo; enfoque de estilo del pitch ahora se elige aleatoriamente en Python en vez de dejárselo al LLM
+- [x] Corregido el contacto de negociación en `responder.py`/EPK: ya no apunta a Diego (que es el desarrollador de la plataforma, no toma decisiones de negocio) — apunta al contacto oficial de la banda (`Bakandeya@gmail.com` / `+34 652938521`)
 - [ ] Primeras pruebas con salas reales (envío de los primeros borradores aprobados)
 
 > **Documentación:** el funcionamiento completo del sistema (arquitectura basada en estado,

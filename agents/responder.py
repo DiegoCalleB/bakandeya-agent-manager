@@ -137,9 +137,10 @@ def responder_leads_interesados():
         
         # Obtener datos de contacto dinámicos del EPK
         contacto_info = epk.get("contacto", {})
-        c_nombre = contacto_info.get("nombre", "Jose (Filgue)")
-        c_telefono = contacto_info.get("telefono", "+34 660107178")
-        c_rol = contacto_info.get("rol", "Manager de la banda")
+        c_nombre = contacto_info.get("nombre", "Bakandeya")
+        c_telefono = contacto_info.get("telefono", "+34 652938521")
+        c_email = contacto_info.get("email", "Bakandeya@gmail.com")
+        c_rol = contacto_info.get("rol", "Contacto oficial de la banda")
 
         instruccion_sistema = (
             "Eres el manager virtual de la banda Bakandeya, un proyecto de Electrobasura / Reggae / Balkan Punk de Madrid.\n"
@@ -151,16 +152,19 @@ def responder_leads_interesados():
             f"- Caché objetivo: {epk.get('cache_objetivo')}\n"
             f"- Disponibilidad: {epk.get('disponibilidad')}\n"
             f"- Integrantes: {', '.join(epk.get('integrantes', []))}\n"
-            f"- Rider Técnico: {epk.get('rider_tecnico', {}).get('descripcion')}\n"
-            f"- Contacto oficial de la banda para cerrar bolos: {c_nombre} ({c_rol}) - Teléfono/WhatsApp: {c_telefono}\n"
+            "  (Precisión: solo la percusión de José Filgueira es reciclada. Elyar Pashang toca handpan y "
+            "percusión étnica original — NO reciclada. No los generalices juntos.)\n"
+            f"- Contacto oficial de la banda para cerrar bolos: {c_nombre} ({c_rol}) - Teléfono/WhatsApp: {c_telefono} - Email: {c_email}\n"
             f"- Enlaces:\n"
-            f"  * Spotify: {epk.get('enlaces', {}).get('spotify')}\n"
-            f"  * YouTube: {epk.get('enlaces', {}).get('youtube_directo')}\n"
-            f"  * Dossier / Rider PDF: {epk.get('enlaces', {}).get('dossier_epk')}\n\n"
+            f"  * Teaser en directo (YouTube): {epk.get('enlaces', {}).get('youtube_teaser_aca2026')}\n\n"
+            "El dossier completo en PDF ya se adjuntó en el primer email de contacto — no ofrezcas ni menciones "
+            "ningún link a él; si lo piden de nuevo, di que te lo adjuntan otra vez encantados. El dossier actual "
+            "NO incluye el rider técnico todavía — no menciones nada sobre el rider técnico (si preguntan por él, "
+            "di que os lo pueden pedir directamente y os lo comparten aparte).\n\n"
             "REGLAS OBLIGATORIAS DE NEGOCIACIÓN:\n"
             "1. DISCLOSURE E IDENTIDAD: Debes firmar siempre y únicamente como 'Bakandeya Virtual Manager' (o indicar de forma natural al final que eres el asistente de inteligencia artificial de la banda).\n"
-            f"2. INTERVENCIÓN HUMANA OBLIGATORIA: Nunca aceptes formalmente una oferta final, un caché definitivo o un contrato de forma vinculante por ti mismo. Deja siempre claro que los detalles finales del acuerdo deben ser confirmados de forma directa y humana por {c_nombre}, {c_rol}.\n"
-            f"3. PROPUESTA DE CONTACTO TELEFÓNICO EXCLUSIVO: Ofrece siempre de manera proactiva al programador del local la posibilidad de llamar o escribir por teléfono/WhatsApp exclusivamente a {c_nombre} ({c_telefono}) para concretar y cerrar los detalles. NO utilices el nombre de Jose (Filgue) para las llamadas o contacto, dirígelos únicamente a {c_nombre}."
+            f"2. INTERVENCIÓN HUMANA OBLIGATORIA: Nunca aceptes formalmente una oferta final, un caché definitivo o un contrato de forma vinculante por ti mismo. Deja siempre claro que los detalles finales del acuerdo deben ser confirmados de forma directa y humana por {c_nombre} ({c_rol}).\n"
+            f"3. PROPUESTA DE CONTACTO DIRECTO EXCLUSIVO: Ofrece siempre de manera proactiva al programador del local la posibilidad de llamar/escribir por teléfono o WhatsApp al {c_telefono}, o escribir a {c_email}, para concretar y cerrar los detalles. Ese es el único canal de contacto directo que debes dar — no ofrezcas ningún otro."
         )
         
         prompt = (
@@ -169,9 +173,9 @@ def responder_leads_interesados():
             f"Escribe un email de respuesta adaptado:\n"
             f"1. Agradece su interés y responde a sus dudas o propuestas de manera clara y profesional.\n"
             f"2. Si preguntan por caché o dinero, mantén la postura del EPK de negociar según aforo y condiciones, pero propón un rango razonable o pregunta qué condiciones de taquilla/caché manejan normalmente, recordando que {c_nombre} validará la oferta definitiva.\n"
-            f"3. Si proponen fecha o disponibilidad, confirma que tenemos flexibilidad en los fines de semana y propón evaluar fechas concretas, indicando que pueden hablar con {c_nombre} directamente.\n"
+            f"3. Si proponen fecha o disponibilidad, confirma que tenemos flexibilidad en los fines de semana y propón evaluar fechas concretas, indicando que pueden contactar directamente con {c_nombre}.\n"
             f"4. Mantén la propuesta corta (máximo 3 párrafos), profesional, animada y orientada a cerrar el bolo.\n"
-            f"5. Invítales obligatoriamente a contactar por teléfono o escribir por WhatsApp a {c_nombre} al número literal {c_telefono} para concretar detalles.\n"
+            f"5. Invítales obligatoriamente a contactar por teléfono/WhatsApp al número literal {c_telefono}, o por email a {c_email}, para concretar detalles.\n"
             f"6. Firma obligatoriamente como 'Bakandeya Virtual Manager'. Devuelve ÚNICAMENTE el cuerpo del email redactado, sin asunto y sin comentarios adicionales."
         )
         
@@ -194,9 +198,16 @@ def responder_leads_interesados():
             borradores_creados += 1
             nueva_nota = f"Respuesta redactada en borrador el {fecha_hoy}."
             notas_actualizadas = (notas.strip() + "\n" + nueva_nota) if notas.strip() else nueva_nota
-            
+
             # Cambiar estado a 'negociando'
             estados.transicionar(lead, estados.NEGOCIANDO, notas=notas_actualizadas)
+
+            mensaje_id = (res_draft.get("message") or {}).get("id") or res_draft.get("id")
+            sheets.registrar_mensaje_hilo(
+                lead_id, nombre_sala, datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                remitente="banda", remitente_nombre="Bakandeya Virtual Manager",
+                asunto=asunto_respuesta, mensaje=cuerpo_respuesta_ia, mensaje_id=mensaje_id
+            )
             telegram.enviar_notificacion_telegram(
                 f"📝 *Borrador de Respuesta Creado* para *{nombre_sala}* ({email})\n"
                 f"• Estado actualizado a: *NEGOCIANDO*"

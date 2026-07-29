@@ -7,6 +7,12 @@ load_dotenv()
 # Nombre del documento de Sheets por defecto
 DOCUMENTO_SHEETS = os.getenv("GOOGLE_SHEETS_DOCUMENT", "Bakandeya Leads")
 
+# Pestaña donde se registra cada mensaje (enviado o recibido) del hilo de conversación de un
+# lead. Su esquema lo define la app externa de dashboard (Bakandeya_AIStudio_Application,
+# server.ts) que también la lee — no cambies el orden de las columnas sin avisar allí también.
+NOMBRE_HOJA_HILOS = "hilos_emails"
+CABECERAS_HILOS = ["id", "lead_id", "nombre_sala", "fecha", "remitente", "remitente_nombre", "asunto", "mensaje"]
+
 def obtener_cliente_sheets():
     """
     Autentica con la Service Account de Google Sheets, ya sea usando el archivo
@@ -58,7 +64,12 @@ def obtener_leads(estado=None):
     try:
         client = obtener_cliente_sheets()
         sheet = client.open(DOCUMENTO_SHEETS).worksheet("leads")
-        datos = sheet.get_all_records()
+        # numericise_ignore=['all']: gspread por defecto intenta convertir celdas "numéricas" a
+        # int/float. Un id hexadecimal como "499e3100" (de una importación antigua sin prefijo
+        # "lead_") se lee como notación científica y desborda a float('inf'), rompiendo cualquier
+        # búsqueda posterior por ese id. Nada del código depende de que 'aforo' llegue ya
+        # convertido (se castea con int() donde hace falta), así que es seguro leer todo como texto.
+        datos = sheet.get_all_records(numericise_ignore=['all'])
         
         if estado:
             return [row for row in datos if row.get("estado") == estado]
@@ -70,7 +81,7 @@ def obtener_leads(estado=None):
 def actualizar_datos_lead(lead_id, datos_dict):
     """
     Actualiza campos específicos de un lead en la hoja de cálculo.
-    datos_dict es un diccionario con claves como: 'estado', 'pitch_generado', 'email_contacto', 'telefono', 'website', 'instagram', 'aforo', 'notas'.
+    datos_dict es un diccionario con claves como: 'estado', 'pitch_generado', 'email_contacto', 'telefono', 'website', 'instagram', 'aforo', 'contacto_nombre', 'contexto_extra', 'notas'.
     """
     try:
         client = obtener_cliente_sheets()
@@ -112,7 +123,21 @@ def actualizar_datos_lead(lead_id, datos_dict):
             sheet.insert_cols([["instagram"]], col=idx_tel + 2)
             # Recargar cabeceras actualizadas
             headers = sheet.row_values(1)
-            
+
+        # Si se solicita actualizar contacto_nombre y no existe la columna, la creamos al lado de instagram
+        if "contacto_nombre" in datos_dict and "contacto_nombre" not in headers:
+            print("[sheets.py] Columna 'contacto_nombre' no encontrada. Insertándola automáticamente...")
+            idx_insta = headers.index("instagram") if "instagram" in headers else (headers.index("email_contacto") + 1 if "email_contacto" in headers else 8)
+            sheet.insert_cols([["contacto_nombre"]], col=idx_insta + 2)
+            headers = sheet.row_values(1)
+
+        # Si se solicita actualizar contexto_extra y no existe la columna, la creamos al lado de notas
+        if "contexto_extra" in datos_dict and "contexto_extra" not in headers:
+            print("[sheets.py] Columna 'contexto_extra' no encontrada. Insertándola automáticamente...")
+            idx_notas = headers.index("notas") if "notas" in headers else len(headers) - 1
+            sheet.insert_cols([["contexto_extra"]], col=idx_notas + 1)
+            headers = sheet.row_values(1)
+
         column_mapping = {header: idx + 1 for idx, header in enumerate(headers)}
         
         for key, val in datos_dict.items():
@@ -136,6 +161,50 @@ def actualizar_estado_lead(lead_id, nuevo_estado, pitch=None, notas=None):
         datos["notas"] = notas
         
     return actualizar_datos_lead(lead_id, datos)
+
+def _obtener_o_crear_hoja_hilos(client):
+    """
+    Devuelve la pestaña 'hilos_emails', creándola con sus cabeceras si todavía no existe
+    (p. ej. primera vez que se registra un mensaje tras añadir esta funcionalidad).
+    """
+    documento = client.open(DOCUMENTO_SHEETS)
+    try:
+        return documento.worksheet(NOMBRE_HOJA_HILOS)
+    except gspread.exceptions.WorksheetNotFound:
+        print(f"[sheets.py] Pestaña '{NOMBRE_HOJA_HILOS}' no encontrada. Creándola...")
+        hoja = documento.add_worksheet(title=NOMBRE_HOJA_HILOS, rows=1000, cols=len(CABECERAS_HILOS))
+        hoja.append_row(CABECERAS_HILOS)
+        return hoja
+
+
+def registrar_mensaje_hilo(lead_id, nombre_sala, fecha, remitente, remitente_nombre, asunto, mensaje, mensaje_id=None):
+    """
+    Añade una fila a 'hilos_emails' con un mensaje del hilo de conversación de un lead
+    (un pitch/borrador enviado, una respuesta de negociación nuestra, o una respuesta recibida
+    de la sala/festival). `remitente` debe ser 'banda' o 'sala'.
+
+    Esta hoja la consume también el dashboard externo (Bakandeya_AIStudio_Application) para
+    mostrar el hilo completo — no toca ni depende de la hoja 'leads'.
+    """
+    try:
+        client = obtener_cliente_sheets()
+        hoja = _obtener_o_crear_hoja_hilos(client)
+
+        # Evita duplicar la misma fila si el agente se reejecuta sobre el mismo mensaje
+        # (p. ej. lector_bandeja.py reprocesando un email que no se marcó como leído a tiempo).
+        if mensaje_id:
+            ids_existentes = hoja.col_values(1)
+            if mensaje_id in ids_existentes:
+                return True
+
+        from datetime import datetime
+        fila_id = mensaje_id or f"em-{lead_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        hoja.append_row([fila_id, str(lead_id), nombre_sala or "", fecha or "", remitente, remitente_nombre or "", asunto or "", mensaje or ""])
+        return True
+    except Exception as e:
+        print(f"Error al registrar mensaje de hilo para lead {lead_id}: {e}")
+        return False
+
 
 def crear_leads(lista_datos_dict):
     """

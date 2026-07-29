@@ -60,7 +60,7 @@ def test_scout_enriquecimiento(mocker, mock_db):
     enriquecidos = enriquecer_leads_sin_contacto(limite_leads=1)
     
     # Debería haber enriquecido con éxito a Sala Karma (1 lead)
-    assert enriquecidos == 1
+    assert len(enriquecidos) == 1
     
     # Comprobar que los datos en mock_db se actualizaron
     assert lead_003["email_contacto"] == "info@salakarma.es"

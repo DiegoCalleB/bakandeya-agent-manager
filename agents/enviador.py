@@ -1,5 +1,6 @@
 import sys
 import os
+from datetime import datetime
 # Asegurar que el directorio raíz está en el path para las importaciones de lib
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -7,6 +8,12 @@ import lib.sheets as sheets
 import lib.gmail_client as gmail_client
 import lib.telegram as telegram
 import lib.estados as estados
+
+# Dossier real en PDF: se adjunta directo al borrador en vez de depender de un link de Drive
+# que puede no estar compartido públicamente.
+RUTA_DOSSIER_PDF = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "Dossier Bakandeya.pdf"
+)
 
 
 def parsear_pitch(pitch, nombre_sala):
@@ -59,9 +66,16 @@ def enviar_leads_aprobados():
         asunto, cuerpo = parsear_pitch(pitch, nombre_sala)
         print(f"[enviador.py] Creando borrador en Gmail para {email} (asunto: {asunto})...")
 
-        res = gmail_client.crear_borrador(email, asunto, cuerpo)
+        ruta_adjunto = RUTA_DOSSIER_PDF if os.path.exists(RUTA_DOSSIER_PDF) else None
+        res = gmail_client.crear_borrador(email, asunto, cuerpo, ruta_adjunto=ruta_adjunto)
         if res:
             estados.transicionar(lead, estados.ESPERANDO)
+            mensaje_id = (res.get("message") or {}).get("id") or res.get("id")
+            sheets.registrar_mensaje_hilo(
+                lead_id, nombre_sala, datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                remitente="banda", remitente_nombre="Bakandeya",
+                asunto=asunto, mensaje=cuerpo, mensaje_id=mensaje_id
+            )
             telegram.enviar_notificacion_telegram(f"📝 Borrador de email creado para *{nombre_sala}* ({email})")
             enviados += 1
             

@@ -204,19 +204,23 @@ def mock_gemini_api(mocker):
     """
     Mockea automáticamente las llamadas de generación de texto del módulo lib.gemini_client.
     """
-    def mock_generar_texto_gemini(prompt, model_name=None, system_instruction=None, temperature=None):
+    def mock_generar_texto_gemini(prompt, model_name=None, system_instruction=None, temperature=None, forzar_json=False):
         prompt_lower = prompt.lower() if prompt else ""
         system_lower = system_instruction.lower() if system_instruction else ""
         
-        # El clasificador de bandeja de entrada se evalúa primero con palabras clave específicas para evitar falsas coincidencias
-        if "lector" in system_lower or "clasifica" in prompt_lower or "categor" in prompt_lower:
-            return "interesado"
-        # El redactor
-        if "redactor" in system_lower or "pitch" in prompt_lower or "propuesta" in prompt_lower:
+        # 1. El redactor tiene prioridad cuando se trata de redactar un pitch
+        if "redactor" in system_lower or "pitch" in prompt_lower or "propuesta artística" in prompt_lower or "propuesta de concierto" in prompt_lower:
             return "PITCH GENERADO MOCK: Hola, nos gustaría presentar a Bakandeya en vuestra sala."
-        # El scout devuelve un JSON para extraer los datos
+        # 2. El clasificador de respuestas (lector de bandeja / responder)
+        if "lector" in system_lower or "clasifica" in prompt_lower or "categor" in prompt_lower or "analiza la siguiente respuesta" in prompt_lower:
+            if forzar_json:
+                return '{"categoria": "interesado", "fecha_propuesta": "15 de noviembre", "oferta_economica": "80% taquilla", "resumen": "Interesados en la propuesta"}'
+            return "interesado"
+        # 3. El scout devuelve un JSON para extraer los datos
         if "contacto" in prompt_lower or "email" in prompt_lower:
             return '{"email": "info@salakarma.es", "telefono": "+34 986 112233", "instagram": "@salakarma", "aforo": 250}'
+        if forzar_json:
+            return '{}'
         return "Respuesta simulada genérica de Gemini."
 
     mocker.patch("lib.gemini_client.generar_texto_gemini", side_effect=mock_generar_texto_gemini)

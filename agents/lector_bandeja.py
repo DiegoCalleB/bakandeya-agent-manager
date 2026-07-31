@@ -9,6 +9,7 @@ import lib.gmail_client as gmail_client
 import lib.gemini_client as gemini_client
 import lib.telegram as telegram
 import lib.estados as estados
+import lib.metricas as metricas
 
 _RE_NOMBRE_REMITENTE = re.compile(r'^"?([^"<]+?)"?\s*<[^>]+>$')
 
@@ -65,55 +66,93 @@ def procesar_bandeja_entrada():
         print(f"[lector_bandeja.py] Nueva respuesta de '{nombre_sala}' ({remitente}). Clasificando...")
         
         prompt = (
-            f"Clasifica la siguiente respuesta de una sala de conciertos a nuestra propuesta de contratación:\n\n"
+            f"Analiza la siguiente respuesta recibida de un local/festival a nuestra propuesta de concierto:\n\n"
             f"Asunto: {respuesta.get('asunto')}\n"
-            f"Cuerpo: {cuerpo}\n\n"
-            "Elige exclusivamente una de estas tres categorías: 'interesado', 'no_interesado', 'negociando'."
+            f"Cuerpo:\n{cuerpo}\n\n"
+            "Devuelve un objeto JSON estructurado con las siguientes claves:\n"
+            "1. 'categoria': una de estas tres opciones estrictas: 'interesado', 'no_interesado', 'negociando'.\n"
+            "2. 'fecha_propuesta': fecha o rango de fechas sugerido por el recinto si lo mencionan (ej. '15 de noviembre', 'fines de semana de octubre'), o null si no proponen fechas.\n"
+            "3. 'oferta_economica': condiciones de caché, taquilla o entrada mencionadas (ej. '80% taquilla (10€ entrada)', 'caché fijo 500€', 'entrada libre'), o null si no especifican dinero.\n"
+            "4. 'resumen': síntesis de 1-2 frases del mensaje en tono claro y directo.\n"
         )
         
         system_prompt = (
-            "Eres un clasificador de emails de respuesta para Bakandeya. "
-            "Debes responder estrictamente con una de las tres palabras: 'interesado', 'no_interesado' o 'negociando'."
+            "Eres un analista experto de respuestas de booking para la banda de música Bakandeya. "
+            "Devuelve únicamente un objeto JSON válido con el esquema exacto solicitado."
         )
         
-        # Gemini 2.5 Flash es rápido y eficiente para clasificar
-        clasificacion = gemini_client.generar_texto_gemini(
+        # Gemini 2.5 Flash en modo JSON para análisis rápido y estructurado
+        json_str = gemini_client.generar_texto_gemini(
             prompt, 
             model_name="gemini-2.5-flash", 
             system_instruction=system_prompt,
-            temperature=0.1
+            temperature=0.1,
+            forzar_json=True
         )
         
-        if clasificacion:
-            categoria = clasificacion.strip().lower()
-            # Validar que la salida sea uno de los estados correctos
-            if categoria not in ["interesado", "no_interesado", "negociando"]:
-                # Por si acaso la IA devuelve texto adicional, buscar coincidencia
-                if "no" in categoria:
-                    categoria = "no_interesado"
-                elif "nego" in categoria:
-                    categoria = "negociando"
-                else:
-                    categoria = "interesado"
-            
-            # Limitar notas para evitar saturar la celda
-            extracto_respuesta = cuerpo[:200].replace("\n", " ")
-            notas = f"Respuesta recibida ({respuesta.get('fecha')}): {extracto_respuesta}..."
-            
-            estados.transicionar(lead_asociado, categoria, notas=notas)
+        datos_analizados = {}
+        if json_str:
+            try:
+                datos_analizados = json.loads(json_str)
+            except Exception as e:
+                print(f"[lector_bandeja.py] Error al parsear JSON de Gemini: {e}. Respuesta: {json_str}")
+        
+        categoria = (datos_analizados.get("categoria") or "").strip().lower()
+        if categoria not in ["interesado", "no_interesado", "negociando"]:
+            if "no" in categoria or "descart" in categoria:
+                categoria = "no_interesado"
+            elif "nego" in categoria:
+                categoria = "negociando"
+            else:
+                categoria = "interesado"
 
-            sheets.registrar_mensaje_hilo(
-                lead_id, nombre_sala, respuesta.get("fecha"),
-                remitente="sala", remitente_nombre=_extraer_nombre_remitente(remitente),
-                asunto=respuesta.get("asunto"), mensaje=cuerpo, mensaje_id=respuesta.get("id")
-            )
-            gmail_client.marcar_como_leido(respuesta.get("id"))
+        fecha_propuesta = datos_analizados.get("fecha_propuesta")
+        oferta_economica = datos_analizados.get("oferta_economica")
+        resumen = datos_analizados.get("resumen") or cuerpo[:200].replace("\n", " ")
+        
+        detalles_extra = []
+        if fecha_propuesta:
+            detalles_extra.append(f"Fecha: {fecha_propuesta}")
+        if oferta_economica:
+            detalles_extra.append(f"Oferta: {oferta_economica}")
+        str_extra = f" [{', '.join(detalles_extra)}]" if detalles_extra else ""
 
-            telegram.enviar_notificacion_telegram(
-                f"🔔 Respuesta de *{nombre_sala}* clasificada como *{categoria.upper()}*\n"
-                f"📝 Resumen: {extracto_respuesta}..."
+        notas = f"Respuesta recibida ({respuesta.get('fecha')}){str_extra}: {resumen}"
+        
+        estados.transicionar(lead_asociado, categoria, notas=notas)
+
+        sheets.registrar_mensaje_hilo(
+            lead_id, nombre_sala, respuesta.get("fecha"),
+            remitente="sala", remitente_nombre=_extraer_nombre_remitente(remitente),
+            asunto=respuesta.get("asunto"), mensaje=cuerpo, mensaje_id=respuesta.get("id")
+        )
+        gmail_client.marcar_como_leido(respuesta.get("id"))
+
+        ciudad_lead = lead_asociado.get("ciudad") or lead_asociado.get("region") or ""
+        ciudad_str = f" ({ciudad_lead})" if ciudad_lead else ""
+
+        if categoria in ["interesado", "negociando"]:
+            msg_telegram = (
+                f"🎉 *¡NUEVO INTERÉS / NEGOCIACIÓN DE BOLO!*\n\n"
+                f"🏛️ *Recinto:* {nombre_sala}{ciudad_str}\n"
+                f"📊 *Estado:* {categoria.upper()}\n"
             )
-            clasificados += 1
+            if fecha_propuesta:
+                msg_telegram += f"📅 *Fecha propuesta:* {fecha_propuesta}\n"
+            if oferta_economica:
+                msg_telegram += f"💰 *Oferta / Condiciones:* {oferta_economica}\n"
+            msg_telegram += f"📝 *Resumen:* {resumen}\n\n"
+            msg_telegram += f"💡 *El asistente creará un borrador de respuesta contextualizado.*\n\n"
+            msg_telegram += metricas.formatear_pie_kpis_telegram()
+        else:
+            msg_telegram = (
+                f"❌ *Respuesta de {nombre_sala}{ciudad_str}*\n"
+                f"📊 *Estado:* NO INTERESADO / DESCARTADO\n"
+                f"📝 *Resumen:* {resumen}"
+            )
+
+        telegram.enviar_notificacion_telegram(msg_telegram)
+        clasificados += 1
             
     print(f"[lector_bandeja.py] Lectura finalizada. Respuestas clasificadas: {clasificados}")
     return clasificados

@@ -208,10 +208,15 @@ def responder_leads_interesados():
                 remitente="banda", remitente_nombre="Bakandeya IA Management",
                 asunto=asunto_respuesta, mensaje=cuerpo_respuesta_ia, mensaje_id=mensaje_id
             )
-            telegram.enviar_notificacion_telegram(
-                f"📝 *Borrador de Respuesta Creado* para *{nombre_sala}* ({email})\n"
-                f"• Estado actualizado a: *NEGOCIANDO*"
+            msg_tg = (
+                f"📝 *BORRADOR DE RESPUESTA CREADO EN GMAIL*\n\n"
+                f"🏛️ *Recinto:* {nombre_sala} ({email})\n"
+                f"📊 *Estado:* NEGOCIANDO\n"
+                f"✍️ *Firmado por:* Bakandeya IA Management\n"
+                f"✉️ *Asunto:* {asunto_respuesta}\n\n"
+                f"💡 *El borrador está listo en Gmail para tu revisión.*"
             )
+            telegram.enviar_notificacion_telegram(msg_tg)
             print(f"[responder.py] Borrador creado con éxito para {nombre_sala}. Lead actualizado a 'negociando'.")
         else:
             print(f"[responder.py] Error al crear borrador para {nombre_sala}.")

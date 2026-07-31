@@ -169,3 +169,23 @@ def test_scout_inferir_tipo():
     
     assert inferir_tipo_lead("Sala El Sol") == "sala"
     assert inferir_tipo_lead("La Riviera") == "sala"
+
+
+def test_extraer_emails_con_regex():
+    """
+    Verifica que el extractor por expresiones regulares capture correos válidos y descarte dominios ignorados o imágenes.
+    """
+    from agents.scout import _extraer_emails_con_regex
+
+    texto = (
+        "Contacto de la sala en booking@salaelsol.com o en info@salaelsol.es. "
+        "No capturar logo@2x.png ni avatar@3x.jpg ni soporte@sentry.io ni contacto@taquilla.com."
+    )
+    emails = _extraer_emails_con_regex(texto)
+
+    assert "booking@salaelsol.com" in emails
+    assert "info@salaelsol.es" in emails
+    assert "soporte@sentry.io" not in emails
+    assert "contacto@taquilla.com" not in emails
+    assert not any("2x.png" in e for e in emails)
+

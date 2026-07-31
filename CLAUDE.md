@@ -159,8 +159,13 @@ bakandeya-agent-manager/
 
 _(Actualizar esta sección a medida que avance)_
 
-- [x] Fase 0 — EPK real de Bakandeya volcado desde el dossier oficial en PDF (bios completas de los 4 integrantes, trayectoria destacada, vídeo, contacto oficial de la banda)
-- [x] `redactor.py` funcionando con EPK real y adaptado a Salas, Festivales y Ayuntamientos con variedad y traducción automática
+- [x] Fase 0 — Contactos, playbook y EPK de Filgue volcados
+- [x] `redactor.py` funcionando con EPK real adaptado a Salas, Festivales y Ayuntamientos (firma 'Bakandeya IA Management')
+- [ ] `enviador.py` + Gmail OAuth funcionando
+- [x] `scout_descubridor.py` — soporte multi-tipo, desambiguación geográfica (España), deduplicación difusa y provincia real en `region`
+- [x] `scout.py` — enriquecimiento con extractor Regex, búsquedas dirigidas en redes sociales (Instagram/Facebook/Linktree), 15 snippets y umbral flexible de email
+- [ ] `lector_bandeja.py` funcionando
+- [x] Primeras pruebas con salas reales ejecutadas con éxito (Guadalajara, Ávila), Festivales y Ayuntamientos con variedad y traducción automática
 - [x] Bug del `ASUNTO:` en `enviador.py` arreglado (el asunto generado ya no se cuela en el cuerpo)
 - [x] `enviador.py` + Gmail OAuth real funcionando y probado (se generó `token.json` y crea borradores en Gmail de verdad)
 - [x] `scout.py` — versión semilla manual + enriquecimiento adaptada a Salas, Festivales y Ayuntamientos

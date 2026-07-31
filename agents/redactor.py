@@ -109,7 +109,7 @@ def generar_pitch_para_lead(lead, epk):
         "(ej: 'te adjunto nuestro dossier completo con más info') sin inventar ningún link para él. El dossier "
         "actual NO incluye el rider técnico todavía — no lo menciones como parte de lo adjunto ni en general.\n"
         f"6. SALUDO: {instruccion_saludo} Prohibido cualquier placeholder o corchete como '[Nombre del programador]', '[Fecha]', '[Responsable]', etc. "
-        "Esto también aplica a la FIRMA final: firma siempre con 'Jon Quel' (voz de la banda) o 'Bakandeya', nunca con un placeholder como '[Tu Nombre]'.\n"
+        "Esto también aplica a la FIRMA final: firma siempre al final del email con 'Bakandeya IA Management', nunca con un placeholder como '[Tu Nombre]' ni con firmas personales sueltas.\n"
         f"7. PERSONALIZACIÓN REAL: {instruccion_personalizacion}\n"
         "8. LONGITUD BREVE: Máximo 120-140 palabras en el cuerpo (sin contar asunto ni firma). Un programador "
         "recibe decenas de emails al día y no va a leer un muro de texto. Máximo 2-3 párrafos CORTOS. "
@@ -144,7 +144,7 @@ def generar_pitch_para_lead(lead, epk):
             f"- Ciudad/Región: {ciudad} / {region}\n\n"
             "Devuelve la respuesta en el formato exacto:\n"
             "ASUNTO: [Asunto en el idioma correspondiente, llamativo y sin repetir patrones]\n\n"
-            "[Cuerpo del email, 2-3 párrafos CORTOS y directos, incluyendo enlaces]"
+            "[Cuerpo del email, 2-3 párrafos CORTOS y directos, incluyendo enlaces y la firma 'Bakandeya IA Management']"
         )
 
         reglas_redaccion = (
@@ -163,7 +163,7 @@ def generar_pitch_para_lead(lead, epk):
             f"- Estilo habitual/Género del festival: {genero}\n\n"
             "Devuelve la respuesta en el formato exacto:\n"
             "ASUNTO: [Asunto en el idioma correspondiente, llamativo y sin repetir patrones]\n\n"
-            "[Cuerpo del email, 2-3 párrafos CORTOS y directos, incluyendo enlaces]"
+            "[Cuerpo del email, 2-3 párrafos CORTOS y directos, incluyendo enlaces y la firma 'Bakandeya IA Management']"
         )
 
         reglas_redaccion = (
@@ -186,7 +186,7 @@ def generar_pitch_para_lead(lead, epk):
             f"- Estilo habitual de la sala: {genero}\n\n"
             "Devuelve la respuesta en el formato exacto:\n"
             "ASUNTO: [Asunto en el idioma correspondiente, llamativo y sin repetir patrones]\n\n"
-            "[Cuerpo del email, 2-3 párrafos CORTOS y directos, incluyendo enlaces]"
+            "[Cuerpo del email, 2-3 párrafos CORTOS y directos, incluyendo enlaces y la firma 'Bakandeya IA Management']"
         )
 
         reglas_redaccion = (
@@ -196,7 +196,7 @@ def generar_pitch_para_lead(lead, epk):
         )
 
     system_prompt = (
-        "Eres el redactor y manager de la banda de música Bakandeya.\n"
+        "Eres Bakandeya IA Management, el sistema de booking y gestión inteligente de la banda de música Bakandeya.\n"
         "Tu objetivo es escribir propuestas de contratación de conciertos (pitches) profesionales, "
         "cercanas y persuasivas.\n\n"
         f"Información de la banda (EPK):\n"

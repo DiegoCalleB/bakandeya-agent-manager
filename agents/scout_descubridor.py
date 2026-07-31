@@ -4,6 +4,7 @@ import json
 import uuid
 import unicodedata
 import argparse
+import difflib
 from dotenv import load_dotenv
 
 # Asegurar que el directorio raíz está en el path para las importaciones de lib
@@ -28,18 +29,117 @@ def normalizar_nombre(texto):
     texto = ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
     
     # Eliminar prefijos comunes
-    prefijos = ["ayuntamiento de ", "ayuntamiento ", "concello de ", "concello ", "ayto de ", "concejo de ", "sala de conciertos ", "sala ", "festival de musica ", "festival ", "fest "]
+    prefijos = [
+        "ayuntamiento de ", "ayuntamiento ", "concello de ", "concello ", "ayto de ", "concejo de ",
+        "sala de conciertos ", "sala ", "discoteca de ", "discoteca ", "discotecas ", "club de ", "club ",
+        "pub ", "teatro ", "auditorio ", "festival de musica ", "festival ", "fest "
+    ]
     for prefijo in prefijos:
         if texto.startswith(prefijo):
             texto = texto[len(prefijo):]
             
     # Eliminar sufijos comunes
-    sufijos = [" festival", " fest", " sala"]
+    sufijos = [" festival", " fest", " sala", " discoteca", " club", " pub", " teatro", " auditorio"]
     for sufijo in sufijos:
         if texto.endswith(sufijo):
             texto = texto[:-len(sufijo)]
             
     return texto.replace(" ", "").replace("-", "").replace("_", "").strip()
+
+def es_duplicado_difuso(nombre_cand, nombres_existentes_normalizados, umbral=0.80):
+    """
+    Comprueba si el nombre de un candidato es un duplicado (exacto, por subcadena o por similitud difusa)
+    de algún lead existente en la base de datos.
+    Devuelve (es_duplicado, nombre_normalizado_coincidente).
+    """
+    norm_cand = normalizar_nombre(nombre_cand)
+    if not norm_cand:
+        return True, ""
+    if norm_cand in nombres_existentes_normalizados:
+        return True, norm_cand
+
+    for norm_existente in nombres_existentes_normalizados:
+        if not norm_existente:
+            continue
+        # Coincidencia por subcadena relevante (ej: 'elsol' en 'elsolmadrid')
+        if len(norm_existente) >= 4 and norm_existente in norm_cand:
+            return True, norm_existente
+        if len(norm_cand) >= 4 and norm_cand in norm_existente:
+            return True, norm_existente
+
+        # Coincidencia por similitud difusa (ratio de caracteres)
+        ratio = difflib.SequenceMatcher(None, norm_cand, norm_existente).ratio()
+        if ratio >= umbral:
+            return True, norm_existente
+    return False, norm_cand
+
+def normalizar_tipo(tipo_str):
+    """
+    Mapea variaciones y plurales de tipos de recinto a una categoría estandarizada.
+    (ej: 'discotecas' -> 'discoteca', 'festivales' -> 'festival', 'ayuntamientos' -> 'ayuntamiento')
+    """
+    t = tipo_str.strip().lower()
+    if t in ["ayuntamiento", "ayuntamientos", "concello", "concellos", "municipio", "municipios"]:
+        return "ayuntamiento"
+    elif t in ["festival", "festivales", "fest", "festis", "ciclo", "ciclos"]:
+        return "festival"
+    elif t in ["discoteca", "discotecas", "club", "clubes", "sala de baile"]:
+        return "discoteca"
+    elif t in ["pub", "pubs", "bar", "bares"]:
+        return "pub"
+    elif t in ["teatro", "teatros", "auditorio", "auditorios"]:
+        return "teatro"
+    elif t in ["sala", "salas", "sala de conciertos"]:
+        return "sala"
+    else:
+        # Para tipos personalizados, quitar 's' final si parece plural
+        if len(t) > 3 and t.endswith("s"):
+            return t[:-1]
+        return t
+
+def obtener_queries_busqueda(tipo_individual, region):
+    """
+    Genera variaciones de queries de búsqueda en DuckDuckGo añadiendo explícitamente 'España'
+    para garantizar la desambiguación geográfica (ej: Guadalajara España vs Guadalajara México).
+    """
+    t = tipo_individual.lower().strip()
+    region_ctx = region if "españa" in region.lower() or "espana" in region.lower() else f"{region} España"
+
+    if t == "ayuntamiento":
+        return [
+            f"municipios y ayuntamientos de la provincia de {region_ctx}",
+            f"concellos ayuntamientos cultura festejos {region_ctx}"
+        ]
+    elif t == "festival":
+        return [
+            f"festivales de musica ciclos conciertos {region_ctx}",
+            f"festival de musica eventos carteles {region_ctx}"
+        ]
+    elif t == "discoteca":
+        return [
+            f"discotecas clubs de musica salas de baile {region_ctx}",
+            f"discotecas clubbing musica en vivo {region_ctx}"
+        ]
+    elif t == "pub":
+        return [
+            f"pubs bares de musica en vivo {region_ctx}",
+            f"locales musica directo pubs {region_ctx}"
+        ]
+    elif t == "teatro":
+        return [
+            f"teatros auditorios recintos culturales {region_ctx}",
+            f"teatro auditorio programación conciertos {region_ctx}"
+        ]
+    elif t == "sala":
+        return [
+            f"salas de conciertos locales de musica en vivo {region_ctx}",
+            f"salas de musica directos programación {region_ctx}"
+        ]
+    else:
+        return [
+            f"{t}s recintos de musica conciertos {region_ctx}",
+            f"{t}s locales cultura en vivo {region_ctx}"
+        ]
 
 def extraer_candidatos_con_ia(resultados, tipo, region):
     """
@@ -51,18 +151,17 @@ def extraer_candidatos_con_ia(resultados, tipo, region):
     res_str = formatear_snippets(resultados)
 
     prompt = (
-        f"Analiza los siguientes resultados de búsqueda web para encontrar nombres de {tipo}s en la región/provincia '{region}':\n\n"
+        f"Analiza los siguientes resultados de búsqueda web para encontrar nombres de {tipo} en la provincia/región de '{region}' (ESPAÑA):\n\n"
         f"{res_str}\n"
-        f"Tu objetivo es extraer una lista de entidades reales de tipo '{tipo}' que pertenezcan a la zona geográfica de '{region}'.\n"
-        "Reglas:\n"
-        f"1. Si el tipo es 'ayuntamiento', extrae únicamente el nombre oficial del ayuntamiento o concello (ej: 'Ayuntamiento de Vigo', 'Concello de Lalín') y su localidad.\n"
-        f"2. Si el tipo es 'festival', extrae el nombre oficial del festival de música o ciclo de conciertos (ej: 'Festival PortAmérica', 'O Son do Camiño') y su localidad.\n"
-        f"3. Si el tipo es 'sala', extrae el nombre de la sala de conciertos, pub de música en vivo o club y su localidad.\n"
-        "4. Ignora directorios genéricos, agencias, turoperadores o noticias. Solo extrae entidades reales.\n"
-        "5. GROUNDING: no inventes entidades. Extrae SOLO las que aparezcan explícitamente en los\n"
+        f"Tu objetivo es extraer una lista de entidades reales de tipo '{tipo}' pertenecientes a la zona geográfica de '{region}' en España.\n"
+        "Reglas estrictas:\n"
+        f"1. DESAMBIGUACIÓN GEOGRÁFICA (CRÍTICA): Extrae ÚNICAMENTE entidades ubicadas en ESPAÑA. Descarta categóricamente cualquier recinto ubicado fuera de España (ej: si ves 'Guadalajara' pero pertenece a México, NO la incluyas; si ves 'Valencia' pero es de Venezuela o 'Córdoba' de Argentina, NO la incluyas).\n"
+        f"2. FILTRO DE IDONEIDAD ARTÍSTICA: Extrae únicamente entidades que celebren eventos culturales, conciertos o música en vivo. Descarta directorios genéricos, agencias o locales comerciales sin actividad de conciertos/eventos.\n"
+        f"3. TIPO EXACTO: Extrae únicamente entidades reales que correspondan exactamente al tipo '{tipo}' (ej: si el tipo es 'discoteca', discotecas o clubes de música; si es 'festival', festivales de música; si es 'ayuntamiento', ayuntamientos o concellos; si es 'sala', salas de conciertos).\n"
+        "4. GROUNDING: no inventes entidades. Extrae SOLO las que aparezcan explícitamente en los\n"
         "   snippets de arriba. Para cada candidato, 'fuente' debe ser el índice del snippet que lo\n"
         "   respalda (ej: '[3]'). Si no puedes señalar un snippet concreto, NO incluyas ese candidato.\n"
-        "6. Devuelve un objeto JSON con este esquema exacto:\n"
+        "5. Devuelve un objeto JSON con este esquema exacto:\n"
         "{\n"
         "  \"candidatos\": [\n"
         "    {\n"
@@ -99,31 +198,49 @@ def extraer_candidatos_con_ia(resultados, tipo, region):
 
 def descubrir_y_añadir_leads(region, tipo, limite=10):
     """
-    Busca leads de uno o varios tipos específicos (separados por comas) en una región/provincia,
+    Busca leads de uno o varios tipos específicos (separados por comas o lista) en una región/provincia,
     los deduplica contra los existentes en la Google Sheet, y los crea masivamente en estado 'nuevo'.
     """
-    tipos = [t.strip().lower() for t in tipo.split(",") if t.strip()]
-    print(f"[scout_descubridor.py] Iniciando descubrimiento en la región/provincia '{region}' para los tipos: {tipos}")
+    tipos_raw = []
+    if isinstance(tipo, (list, tuple)):
+        for item in tipo:
+            if item:
+                tipos_raw.extend([t.strip() for t in str(item).split(",") if t.strip()])
+    elif isinstance(tipo, str):
+        tipos_raw = [t.strip() for t in tipo.split(",") if t.strip()]
+    else:
+        tipos_raw = [str(tipo).strip()]
+
+    tipos = []
+    for t in tipos_raw:
+        norm_t = normalizar_tipo(t)
+        if norm_t not in tipos:
+            tipos.append(norm_t)
+
+    print(f"[scout_descubridor.py] Iniciando descubrimiento en la región/provincia '{region}' (España) para los tipos: {tipos}")
     
     todos_candidatos = []
     
-    # 1. Generar búsquedas y extraer candidatos por cada tipo individual
+    # 1. Generar búsquedas variadas (multi-query) y extraer candidatos por cada tipo individual
     for tipo_individual in tipos:
-        if tipo_individual == "ayuntamiento":
-            query = f"municipios y ayuntamientos de la provincia de {region}"
-        elif tipo_individual == "festival":
-            query = f"festivales de musica ciclos conciertos {region}"
-        else:
-            query = f"salas de conciertos locales de musica en vivo {region}"
-            
-        print(f"[scout_descubridor.py] Buscando en DuckDuckGo con query: '{query}'...")
-        resultados = buscar_duckduckgo(query, max_results=10)
+        queries = obtener_queries_busqueda(tipo_individual, region)
+        resultados_combinados = []
+        urls_vistas = set()
+
+        for q in queries:
+            print(f"[scout_descubridor.py] Buscando en DuckDuckGo para tipo '{tipo_individual}' con query: '{q}'...")
+            res = buscar_duckduckgo(q, max_results=8)
+            for r in res:
+                href = r.get("href")
+                if href not in urls_vistas:
+                    urls_vistas.add(href)
+                    resultados_combinados.append(r)
         
-        if not resultados:
+        if not resultados_combinados:
             print(f"[scout_descubridor.py] No se obtuvieron resultados para tipo '{tipo_individual}'. Saltando.")
             continue
             
-        candidatos = extraer_candidatos_con_ia(resultados, tipo_individual, region)
+        candidatos = extraer_candidatos_con_ia(resultados_combinados, tipo_individual, region)
         print(f"[scout_descubridor.py] IA extrajo {len(candidatos)} posibles candidatos de tipo '{tipo_individual}'.")
         
         # Guardar la asignación del tipo correspondiente
@@ -138,7 +255,7 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
         enviar_webhook_finalizacion("scout_descubridor", region, creados=0, leads_enriquecidos=[])
         return 0
         
-    # 2. Cargar leads existentes para deduplicación
+    # 2. Cargar leads existentes para deduplicación exacta y difusa
     leads_existentes = sheets.obtener_leads()
     nombres_existentes_normalizados = {normalizar_nombre(l.get("nombre_sala")) for l in leads_existentes if l.get("nombre_sala")}
     
@@ -153,9 +270,9 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
         if not nombre:
             continue
 
-        nombre_norm = normalizar_nombre(nombre)
-        if nombre_norm in nombres_existentes_normalizados:
-            print(f"[scout_descubridor.py] Ignorando '{nombre}' (Ya existe en la base de datos).")
+        es_dup, norm_nombre = es_duplicado_difuso(nombre, nombres_existentes_normalizados, umbral=0.85)
+        if es_dup:
+            print(f"[scout_descubridor.py] Ignorando '{nombre}' (Duplicado exacto o difuso de '{norm_nombre}').")
             continue
 
         # Generar ID de 8 caracteres único para no colisionar
@@ -165,7 +282,7 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
             "id": lead_id,
             "nombre_sala": nombre,
             "ciudad": ciudad or region,
-            "region": "España",  # En la Sheet, la columna 'region' almacena el país (España)
+            "region": region,  # Guardar la provincia/región real solicitada (ej. Guadalajara, Pontevedra)
             "tipo": tipo_cand,
             "fuente": f"Scout Descubridor: {region}",
             "estado": estados.NUEVO,
@@ -177,7 +294,7 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
         }
         
         leads_a_crear.append(nuevo_lead)
-        nombres_existentes_normalizados.add(nombre_norm) # Prevenir duplicación en la misma corrida
+        nombres_existentes_normalizados.add(norm_nombre) # Prevenir duplicación en la misma corrida
         
         if len(leads_a_crear) >= limite:
             break
@@ -213,15 +330,15 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Agente Scout Descubridor para búsqueda activa de leads.")
     parser.add_argument("--region", type=str, required=True, help="Región o Provincia donde buscar.")
-    parser.add_argument("--tipo", type=str, required=True, help="Tipo de entidad a buscar (separado por comas, ej: 'sala,festival').")
+    parser.add_argument(
+        "--tipo",
+        action="append",
+        required=True,
+        help="Tipo(s) de entidad a buscar. Puedes especificarlo varias veces (--tipo discotecas --tipo festivales) o separado por comas (--tipo 'discotecas,festivales')."
+    )
     parser.add_argument("--limit", type=int, default=10, help="Límite máximo de nuevos leads a añadir.")
     args = parser.parse_args()
     
-    # Validar tipos
-    tipos = [t.strip().lower() for t in args.tipo.split(",") if t.strip()]
-    tipos_validos = ["sala", "festival", "ayuntamiento"]
-    for t in tipos:
-        if t not in tipos_validos:
-            parser.error(f"Tipo '{t}' inválido. Debe ser uno de {tipos_validos}.")
-            
     descubrir_y_añadir_leads(region=args.region, tipo=args.tipo, limite=args.limit)
+
+

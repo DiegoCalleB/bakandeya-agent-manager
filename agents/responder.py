@@ -162,7 +162,7 @@ def responder_leads_interesados():
             "NO incluye el rider técnico todavía — no menciones nada sobre el rider técnico (si preguntan por él, "
             "di que os lo pueden pedir directamente y os lo comparten aparte).\n\n"
             "REGLAS OBLIGATORIAS DE NEGOCIACIÓN:\n"
-            "1. DISCLOSURE E IDENTIDAD: Debes firmar siempre y únicamente como 'Bakandeya Virtual Manager' (o indicar de forma natural al final que eres el asistente de inteligencia artificial de la banda).\n"
+            "1. DISCLOSURE E IDENTIDAD: Debes firmar siempre y únicamente como 'Bakandeya IA Management'.\n"
             f"2. INTERVENCIÓN HUMANA OBLIGATORIA: Nunca aceptes formalmente una oferta final, un caché definitivo o un contrato de forma vinculante por ti mismo. Deja siempre claro que los detalles finales del acuerdo deben ser confirmados de forma directa y humana por {c_nombre} ({c_rol}).\n"
             f"3. PROPUESTA DE CONTACTO DIRECTO EXCLUSIVO: Ofrece siempre de manera proactiva al programador del local la posibilidad de llamar/escribir por teléfono o WhatsApp al {c_telefono}, o escribir a {c_email}, para concretar y cerrar los detalles. Ese es el único canal de contacto directo que debes dar — no ofrezcas ningún otro."
         )
@@ -176,7 +176,7 @@ def responder_leads_interesados():
             f"3. Si proponen fecha o disponibilidad, confirma que tenemos flexibilidad en los fines de semana y propón evaluar fechas concretas, indicando que pueden contactar directamente con {c_nombre}.\n"
             f"4. Mantén la propuesta corta (máximo 3 párrafos), profesional, animada y orientada a cerrar el bolo.\n"
             f"5. Invítales obligatoriamente a contactar por teléfono/WhatsApp al número literal {c_telefono}, o por email a {c_email}, para concretar detalles.\n"
-            f"6. Firma obligatoriamente como 'Bakandeya Virtual Manager'. Devuelve ÚNICAMENTE el cuerpo del email redactado, sin asunto y sin comentarios adicionales."
+            f"6. Firma obligatoriamente como 'Bakandeya IA Management'. Devuelve ÚNICAMENTE el cuerpo del email redactado, sin asunto y sin comentarios adicionales."
         )
         
         cuerpo_respuesta_ia = generar_texto_gemini(prompt, system_instruction=instruccion_sistema, temperature=0.7)
@@ -205,7 +205,7 @@ def responder_leads_interesados():
             mensaje_id = (res_draft.get("message") or {}).get("id") or res_draft.get("id")
             sheets.registrar_mensaje_hilo(
                 lead_id, nombre_sala, datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-                remitente="banda", remitente_nombre="Bakandeya Virtual Manager",
+                remitente="banda", remitente_nombre="Bakandeya IA Management",
                 asunto=asunto_respuesta, mensaje=cuerpo_respuesta_ia, mensaje_id=mensaje_id
             )
             telegram.enviar_notificacion_telegram(

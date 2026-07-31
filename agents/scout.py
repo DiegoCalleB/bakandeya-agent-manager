@@ -25,11 +25,10 @@ NIVELES_CONFIANZA = {"alta": 3, "media": 2, "baja": 1}
 
 # Umbral de confianza mínimo para escribir cada campo en la Sheet.
 # Estricto en los datos de contacto (con ellos se envía el pitch: no pueden ser inventados)
-# y flexible en los datos "blandos" (género/aforo son deducciones por naturaleza, casi nunca
-# aparecen literales; exigir 'alta' los dejaría siempre vacíos). El humano verifica todo antes
-# de que un lead pase a 'aprobado', así que un blando 'media' no compromete ninguna regla.
+# y flexible en los datos "blandos" (género/aforo son deducciones por naturaleza).
+# El humano verifica todo en 'pendiente_aprobacion' antes de que un lead pase a 'aprobado'.
 UMBRALES_POR_CAMPO = {
-    "email": "alta",
+    "email": "media",
     "telefono": "alta",
     "website": "alta",
     "instagram": "alta",
@@ -38,6 +37,45 @@ UMBRALES_POR_CAMPO = {
     "contacto_nombre": "media",
     "contexto_extra": "media",
 }
+
+DOMINIOS_IGNORADOS_REGEX = [
+    "sentry.io", "wix.com", "wixpress.com", "example.com", "domain.com",
+    "taquilla.com", "tripadvisor.com", "facebook.com", "instagram.com",
+    "schema.org", "google.com", "github.com", "twitter.com", "youtube.com"
+]
+
+EXTENSIONES_IMAGEN_IGNORADAS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]
+
+import re
+
+def _extraer_emails_con_regex(texto):
+    """
+    Busca direcciones de correo electrónico en un texto usando expresiones regulares,
+    descartando dominios de ruido técnico, imágenes o plataformas genéricas de entradas.
+    """
+    if not texto or not isinstance(texto, str):
+        return []
+    
+    patron = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+    coincidencias = re.findall(patron, texto)
+    emails_validos = []
+    
+    for email in coincidencias:
+        email_clean = email.strip().lower()
+        
+        # Ignorar si termina en una extensión de imagen típica de srcset/HTML
+        if any(email_clean.endswith(ext) for ext in EXTENSIONES_IMAGEN_IGNORADAS):
+            continue
+            
+        # Ignorar si pertenece a un dominio en la lista negra
+        dominio = email_clean.split("@")[-1]
+        if any(dom in dominio for dom in DOMINIOS_IGNORADOS_REGEX):
+            continue
+            
+        if email_clean not in emails_validos:
+            emails_validos.append(email_clean)
+            
+    return emails_validos
 
 
 def _procesar_campos_extraidos(data, campos, umbral="alta", umbrales_por_campo=None):
@@ -265,6 +303,9 @@ def descargar_texto_pagina(url):
     """
     Descarga el contenido de una URL, extrae su texto plano limpio y enlaces comunes de contacto.
     """
+    if not url or not (url.startswith("http://") or url.startswith("https://")):
+        return "", []
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -446,9 +487,7 @@ def procesar_un_lead(lead):
     sugerencias_totales = []
     CAMPOS = ["email", "telefono", "instagram", "website", "genero", "aforo", "contacto_nombre", "contexto_extra"]
 
-    # 1. Una única búsqueda amplia + extracción estructurada desde snippets.
-    # Antes había hasta 4 búsquedas y 6 llamadas a la IA por lead; ahora arrancamos con 1
-    # de cada y solo profundizamos si falta el dato crítico (email).
+    # 1. Una única búsqueda amplia + extracción estructurada desde snippets + Regex de correos.
     if tipo == "ayuntamiento":
         query_busqueda = f"{nombre_sala} concejalía festejos cultura contacto email telefono"
     elif tipo == "festival":
@@ -456,10 +495,15 @@ def procesar_un_lead(lead):
     else:
         query_busqueda = f"{nombre_sala} {ciudad} web oficial contacto email telefono aforo"
 
-    results = buscar_duckduckgo(query_busqueda, max_results=8)
+    results = buscar_duckduckgo(query_busqueda, max_results=15)
     datos_snippets = extraer_datos_contacto_de_snippets(nombre_sala, ciudad, results, tipo=tipo)
     sugerencias_totales.extend(datos_snippets.get("_sugerencias") or [])
     _combinar(datos, datos_snippets, CAMPOS)
+
+    # Respaldo Regex sobre los snippets iniciales
+    emails_regex = _extraer_emails_con_regex(formatear_snippets(results))
+    if emails_regex and not datos.get("email"):
+        datos["email"] = emails_regex[0]
 
     # 2. Si no se encontró la web oficial en los snippets amplios, la buscamos de manera dedicada
     web = datos.get("website")
@@ -470,7 +514,7 @@ def procesar_un_lead(lead):
             datos["website"] = web
 
     # 3. Si la web es standalone (no red social), descargamos su HTML: es la mejor fuente
-    # de aforo y género (datos que rara vez salen en un snippet).
+    # de aforo y género.
     is_social = bool(web) and any(
         s in web.lower() for s in ["facebook.com", "instagram.com", "twitter.com", "x.com", "linkedin.com"]
     )
@@ -484,8 +528,11 @@ def procesar_un_lead(lead):
             sugerencias_totales.extend(datos_web.get("_sugerencias") or [])
             _combinar(datos, datos_web, CAMPOS)
 
+            emails_web_regex = _extraer_emails_con_regex(texto_home)
+            if emails_web_regex and not datos.get("email"):
+                datos["email"] = emails_web_regex[0]
+
             # Profundizamos en la página de contacto solo si aún falta email o aforo
-            # (el email es crítico; el aforo casi siempre vive en "el local"/"sobre nosotros").
             if (not datos.get("email") or not datos.get("aforo")) and paginas_contacto:
                 url_contacto = paginas_contacto[0]
                 print(f"[scout.py] Buscando en página de contacto: {url_contacto}")
@@ -493,13 +540,29 @@ def procesar_un_lead(lead):
                 datos_contacto = extraer_datos_contacto(texto_contacto, url_contacto, tipo=tipo)
                 sugerencias_totales.extend(datos_contacto.get("_sugerencias") or [])
                 _combinar(datos, datos_contacto, CAMPOS)
+
+                emails_contacto_regex = _extraer_emails_con_regex(texto_contacto)
+                if emails_contacto_regex and not datos.get("email"):
+                    datos["email"] = emails_contacto_regex[0]
     elif is_social:
-        print(f"[scout.py] Canal oficial es red social ({web}), omitiendo scraping directo.")
+        print(f"[scout.py] Canal oficial es red social ({web}), omitiendo scraping HTML directo.")
     else:
         print(f"[scout.py] No se encontró web oficial standalone para descargar.")
 
-    # 4. Fallback dirigido: solo si sigue faltando el email (el único dato imprescindible).
-    # No gastamos una búsqueda extra por un teléfono o un instagram que faltan.
+    # 4. Búsqueda dirigida a Redes Sociales (Instagram / Facebook / Linktree) si aún falta email
+    if not datos.get("email"):
+        print(f"[scout.py] Buscando perfiles de contacto en redes sociales (Instagram/Facebook/Linktree)...")
+        query_social = f'"{nombre_sala}" "{ciudad}" instagram OR facebook OR linktree "booking" OR "contacto" OR "@"'
+        results_social = buscar_duckduckgo(query_social, max_results=12)
+        if results_social:
+            datos_social = extraer_datos_contacto_de_snippets(nombre_sala, ciudad, results_social, tipo=tipo)
+            sugerencias_totales.extend(datos_social.get("_sugerencias") or [])
+            _combinar(datos, datos_social, CAMPOS)
+            emails_social_regex = _extraer_emails_con_regex(formatear_snippets(results_social))
+            if emails_social_regex and not datos.get("email"):
+                datos["email"] = emails_social_regex[0]
+
+    # 5. Fallback dirigido: solo si sigue faltando el email (el único dato imprescindible).
     if not datos.get("email"):
         print(f"[scout.py] Fallback: buscando específicamente el email de contacto de '{nombre_sala}'...")
         if tipo == "ayuntamiento":
@@ -509,11 +572,14 @@ def procesar_un_lead(lead):
         else:
             query_fallback = f"{nombre_sala} {ciudad} contacto email correo telefono"
 
-        results_fallback = buscar_duckduckgo(query_fallback, max_results=8)
+        results_fallback = buscar_duckduckgo(query_fallback, max_results=15)
         if results_fallback:
             datos_fallback = extraer_datos_contacto_de_snippets(nombre_sala, ciudad, results_fallback, tipo=tipo)
             sugerencias_totales.extend(datos_fallback.get("_sugerencias") or [])
             _combinar(datos, datos_fallback, CAMPOS)
+            emails_fb_regex = _extraer_emails_con_regex(formatear_snippets(results_fallback))
+            if emails_fb_regex and not datos.get("email"):
+                datos["email"] = emails_fb_regex[0]
 
     # 5. Formatear y guardar los resultados
     def _limpiar(v):

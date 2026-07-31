@@ -73,10 +73,18 @@ def enviar_leads_aprobados():
             mensaje_id = (res.get("message") or {}).get("id") or res.get("id")
             sheets.registrar_mensaje_hilo(
                 lead_id, nombre_sala, datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-                remitente="banda", remitente_nombre="Bakandeya",
+                remitente="banda", remitente_nombre="Bakandeya IA Management",
                 asunto=asunto, mensaje=cuerpo, mensaje_id=mensaje_id
             )
-            telegram.enviar_notificacion_telegram(f"📝 Borrador de email creado para *{nombre_sala}* ({email})")
+            msg_tg = (
+                f"📝 *BORRADOR DE PROPOSAL CREADO EN GMAIL*\n\n"
+                f"🏛️ *Recinto:* {nombre_sala} ({email})\n"
+                f"✉️ *Asunto:* {asunto}\n"
+                f"✍️ *Firmado por:* Bakandeya IA Management\n"
+                f"📌 *Estado:* ESPERANDO RESPUESTA\n\n"
+                f"💡 *El borrador está disponible en tu Gmail para que lo revises antes de enviarlo.*"
+            )
+            telegram.enviar_notificacion_telegram(msg_tg)
             enviados += 1
             
     print(f"[enviador.py] Creación de borradores finalizada. Total borradores creados: {enviados}")

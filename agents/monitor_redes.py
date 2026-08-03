@@ -64,25 +64,23 @@ def limpiar_numero_seguidores(texto_raw):
 def obtener_seguidores_instagram():
     """
     Obtiene los seguidores de Instagram buscando el perfil en DuckDuckGo.
+    Diferencia estrictamente 'seguidores' (followers) de 'seguidos' (following).
     """
     query = "site:instagram.com/bakandeya"
     print(f"[monitor_redes] Buscando seguidores de Instagram vía DDG...")
     try:
-        resultados = buscar_duckduckgo(query, max_results=3)
+        resultados = buscar_duckduckgo(query, max_results=5)
         for r in resultados:
-            snippet = r.get("body", "")
-            title = r.get("title", "")
+            texto_completo = f"{r.get('title', '')} {r.get('body', '')}"
             
-            # Buscar patrones como "1,334 Followers" o "1.334 seguidores" o "813 Followers"
-            match = re.search(r'([\d.,]+K?)\s*(?:Followers|seguidores)', snippet, re.IGNORECASE)
-            if not match:
-                match = re.search(r'([\d.,]+K?)\s*(?:Followers|seguidores)', title, re.IGNORECASE)
-                
-            if match:
-                raw_followers = match.group(1)
-                followers = limpiar_numero_seguidores(raw_followers)
-                print(f"[monitor_redes] Seguidores Instagram extraídos: {followers} (de '{raw_followers}')")
-                return followers
+            # Buscar patrones explícitos de seguidores (descartando 'following' / 'seguidos')
+            matches = re.findall(r'([\d.,]+[Kk]?)\s*(?:Followers|seguidores)', texto_completo, re.IGNORECASE)
+            for raw_val in matches:
+                val = limpiar_numero_seguidores(raw_val)
+                # Un canal activo de la banda no tiene 0 seguidores
+                if val > 0:
+                    print(f"[monitor_redes] Seguidores Instagram extraídos: {val} (de '{raw_val}')")
+                    return val
         print("[monitor_redes] Advertencia: No se encontró el conteo de seguidores en los resultados de Instagram.")
         return 0
     except Exception as e:
@@ -167,6 +165,23 @@ def ejecutar_monitor():
             worksheet = spreadsheet.add_worksheet(title="metricas", rows="100", cols="5")
             worksheet.append_row(["fecha", "instagram", "tiktok", "youtube", "notas"])
             
+        # Filtro de protección contra anomalías respecto al histórico
+        filas_existentes = worksheet.get_all_records()
+        if filas_existentes:
+            ultima_fila = filas_existentes[-1]
+            prev_ig = int(ultima_fila.get("instagram") or 0)
+            prev_tt = int(ultima_fila.get("tiktok") or 0)
+            prev_yt = int(ultima_fila.get("youtube") or 0)
+            
+            # Si el valor de Instagram extraído es 0 o cae más de un 20% respecto al anterior, conservar el anterior
+            if prev_ig > 0 and (instagram == 0 or instagram < prev_ig * 0.80):
+                print(f"[monitor_redes] Protección de datos: IG extraído ({instagram}) descartado por posible anomalía/confusión con seguidos. Conservando {prev_ig}.")
+                instagram = prev_ig
+            if prev_tt > 0 and tiktok == 0:
+                tiktok = prev_tt
+            if prev_yt > 0 and youtube == 0:
+                youtube = prev_yt
+
         fecha_hoy = datetime.now().strftime("%Y-%m-%d")
         row = [fecha_hoy, instagram, tiktok, youtube, "Registro automático"]
         worksheet.append_row(row)

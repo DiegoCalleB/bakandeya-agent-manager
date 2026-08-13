@@ -16,6 +16,7 @@ load_dotenv()
 import lib.sheets as sheets
 import lib.gemini_client as gemini_client
 import lib.estados as estados
+import lib.google_places as google_places
 from lib.busqueda import buscar_duckduckgo, formatear_snippets
 
 # Ranking de niveles de confianza. La IA etiqueta cada dato extraído con uno de estos
@@ -36,6 +37,9 @@ UMBRALES_POR_CAMPO = {
     "aforo": "media",
     "contacto_nombre": "media",
     "contexto_extra": "media",
+    # 'alta' a propósito: una dirección mal extraída es peor que no tener ninguna — se usa
+    # para calcular rutas y gastos de gira, así que un dato dudoso no debe pasar como verificado.
+    "direccion": "alta",
 }
 
 DOMINIOS_IGNORADOS_REGEX = [
@@ -208,7 +212,8 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
             "5. genero: Pon siempre 'Varios / Festivo'.\n"
             "6. aforo: Pon siempre null.\n"
             "7. contacto_nombre: El nombre y apellido de la persona responsable (concejal/a de cultura, festejos o juventud) SOLO si aparece explícitamente nombrada en el texto. Si no aparece, null.\n"
-            "8. contexto_extra: Una frase breve (máx. 20 palabras) sobre qué tipo de eventos, fiestas patronales o programación cultural organiza este ayuntamiento, basada SOLO en lo que dice el texto. Si no hay información concreta, null."
+            "8. contexto_extra: Una frase breve (máx. 20 palabras) sobre qué tipo de eventos, fiestas patronales o programación cultural organiza este ayuntamiento, basada SOLO en lo que dice el texto. Si no hay información concreta, null.\n"
+            "9. direccion: La dirección postal completa (calle, número, código postal) de la sede del ayuntamiento o del recinto donde se celebran los eventos, SOLO si aparece literal en el texto. Si no aparece, null."
         )
     elif tipo == "festival":
         objetivo_contacto = (
@@ -220,7 +225,8 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
             "5. genero: El estilo o género musical predominante del festival (ej: 'Indie / Pop', 'Electrónica', 'Folk', etc.).\n"
             "6. aforo: La capacidad o aforo del recinto del festival (número entero, o null si no se menciona).\n"
             "7. contacto_nombre: El nombre y apellido de la persona de programación, dirección artística o booking SOLO si aparece explícitamente nombrada en el texto. Si no aparece, null.\n"
-            "8. contexto_extra: Una frase breve (máx. 20 palabras) sobre el ambiente, edición actual, artistas destacados o carácter del festival, basada SOLO en lo que dice el texto. Si no hay información concreta, null."
+            "8. contexto_extra: Una frase breve (máx. 20 palabras) sobre el ambiente, edición actual, artistas destacados o carácter del festival, basada SOLO en lo que dice el texto. Si no hay información concreta, null.\n"
+            "9. direccion: La dirección postal completa (calle, número, código postal) del recinto donde se celebra el festival, SOLO si aparece literal en el texto. Si no aparece, null."
         )
     else:
         objetivo_contacto = (
@@ -232,7 +238,8 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
             "5. genero: El estilo o género musical habitual de la sala, indicando los estilos predominantes específicos si se mencionan en los resultados (ej: 'Rock / Metal', 'Balkan / Ska / Reggae', 'Indie Pop', etc. Evita poner simplemente 'Varios' a menos que no exista otra información).\n"
             "6. aforo: El aforo de la sala (capacidad máxima de personas) si se menciona en los resultados (número entero, o null si no se menciona).\n"
             "7. contacto_nombre: El nombre y apellido de la persona programadora o responsable de booking SOLO si aparece explícitamente nombrada en el texto. Si no aparece, null.\n"
-            "8. contexto_extra: Una frase breve (máx. 20 palabras) sobre qué tipo de conciertos/eventos organiza habitualmente la sala, su ambiente o su público, basada SOLO en lo que dice el texto. Si no hay información concreta, null."
+            "8. contexto_extra: Una frase breve (máx. 20 palabras) sobre qué tipo de conciertos/eventos organiza habitualmente la sala, su ambiente o su público, basada SOLO en lo que dice el texto. Si no hay información concreta, null.\n"
+            "9. direccion: La dirección postal completa (calle, número, código postal) de la sala, SOLO si aparece literal en el texto. Si no aparece, null."
         )
 
     prompt = (
@@ -256,7 +263,8 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
         "  \"genero\":    {\"valor\": \"genero o null\",    \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
         "  \"aforo\":     {\"valor\": \"aforo o null\",     \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
         "  \"contacto_nombre\": {\"valor\": \"nombre o null\", \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
-        "  \"contexto_extra\":  {\"valor\": \"frase breve o null\", \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"}\n"
+        "  \"contexto_extra\":  {\"valor\": \"frase breve o null\", \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"},\n"
+        "  \"direccion\":  {\"valor\": \"direccion postal o null\", \"confianza\": \"alta|media|baja\", \"fuente\": \"[n] o null\"}\n"
         "}"
     )
 
@@ -276,7 +284,7 @@ def extraer_datos_contacto_de_snippets(nombre_sala, ciudad, resultados, tipo="sa
         return {}
 
     aceptados, sugerencias = _procesar_campos_extraidos(
-        data, campos=["email", "telefono", "instagram", "website", "genero", "aforo", "contacto_nombre", "contexto_extra"],
+        data, campos=["email", "telefono", "instagram", "website", "genero", "aforo", "contacto_nombre", "contexto_extra", "direccion"],
         umbrales_por_campo=UMBRALES_POR_CAMPO,
     )
     if sugerencias:
@@ -354,7 +362,8 @@ def extraer_datos_contacto(texto, url_origen, tipo="sala"):
             "2. Para el email: extrae el correo de la concejalía de cultura, de festejos, de juventud o el general del ayuntamiento (ej: cultura@..., festejos@..., concejalia.cultura@..., info@...).\n"
             "3. Para el genero: extrae o infiere el tipo de música (pon 'Varios / Festivo').\n"
             "4. Para contacto_nombre: nombre y apellido del/de la concejal/a de cultura, festejos o juventud SOLO si aparece literal en el texto. Si no, null.\n"
-            "5. Para contexto_extra: una frase breve (máx. 20 palabras) sobre las fiestas patronales o programación cultural del municipio, basada solo en el texto. Si no hay info concreta, null."
+            "5. Para contexto_extra: una frase breve (máx. 20 palabras) sobre las fiestas patronales o programación cultural del municipio, basada solo en el texto. Si no hay info concreta, null.\n"
+            "6. Para direccion: la dirección postal completa (calle, número, código postal) de la sede del ayuntamiento, SOLO si aparece literal en el texto. Si no, null."
         )
     elif tipo == "festival":
         objetivo_contacto = (
@@ -362,7 +371,8 @@ def extraer_datos_contacto(texto, url_origen, tipo="sala"):
             "2. Para el email: extrae el correo de contratación, booking, propuestas artísticas, producción o el de información general.\n"
             "3. Para el genero: extrae o infiere el estilo musical predominante del festival, indicando los géneros específicos (ej: 'Indie Pop', 'Folk Rock', etc.).\n"
             "4. Para contacto_nombre: nombre y apellido de la persona de programación, dirección artística o booking SOLO si aparece literal en el texto. Si no, null.\n"
-            "5. Para contexto_extra: una frase breve (máx. 20 palabras) sobre el ambiente, edición actual o artistas destacados del festival, basada solo en el texto. Si no hay info concreta, null."
+            "5. Para contexto_extra: una frase breve (máx. 20 palabras) sobre el ambiente, edición actual o artistas destacados del festival, basada solo en el texto. Si no hay info concreta, null.\n"
+            "6. Para direccion: la dirección postal completa (calle, número, código postal) del recinto del festival, SOLO si aparece literal en el texto. Si no, null."
         )
     else:
         objetivo_contacto = (
@@ -370,7 +380,8 @@ def extraer_datos_contacto(texto, url_origen, tipo="sala"):
             "2. Para el email: extrae solo correos corporativos o de contacto profesional de la sala (ej: programacion@..., info@..., contacto@...).\n"
             "3. Para el genero: extrae o infiere el estilo o género musical habitual de la sala, detallando los estilos predominantes de forma específica (ej: 'Rock / Metal', 'Balkan / Ska / Reggae', 'Electrónica / Techno', etc. Evita poner 'Varios' a menos que no exista otra información).\n"
             "4. Para contacto_nombre: nombre y apellido de la persona programadora o responsable de booking SOLO si aparece literal en el texto. Si no, null.\n"
-            "5. Para contexto_extra: una frase breve (máx. 20 palabras) sobre qué tipo de conciertos organiza habitualmente la sala, su ambiente o su público, basada solo en el texto. Si no hay info concreta, null."
+            "5. Para contexto_extra: una frase breve (máx. 20 palabras) sobre qué tipo de conciertos organiza habitualmente la sala, su ambiente o su público, basada solo en el texto. Si no hay info concreta, null.\n"
+            "6. Para direccion: la dirección postal completa (calle, número, código postal) de la sala, SOLO si aparece literal en el texto. Si no, null."
         )
 
     prompt = (
@@ -391,7 +402,8 @@ def extraer_datos_contacto(texto, url_origen, tipo="sala"):
         '  "aforo":     {"valor": 300,                       "confianza": "alta|media|baja", "fuente": "texto o null"},\n'
         '  "genero":    {"valor": "genero o null",          "confianza": "alta|media|baja", "fuente": "texto o null"},\n'
         '  "contacto_nombre": {"valor": "nombre o null",    "confianza": "alta|media|baja", "fuente": "texto o null"},\n'
-        '  "contexto_extra":  {"valor": "frase breve o null", "confianza": "alta|media|baja", "fuente": "texto o null"}\n'
+        '  "contexto_extra":  {"valor": "frase breve o null", "confianza": "alta|media|baja", "fuente": "texto o null"},\n'
+        '  "direccion":  {"valor": "direccion postal o null", "confianza": "alta|media|baja", "fuente": "texto o null"}\n'
         "}"
     )
 
@@ -418,7 +430,7 @@ def extraer_datos_contacto(texto, url_origen, tipo="sala"):
         return {}
 
     aceptados, sugerencias = _procesar_campos_extraidos(
-        data, campos=["email", "telefono", "instagram", "aforo", "genero", "contacto_nombre", "contexto_extra"],
+        data, campos=["email", "telefono", "instagram", "aforo", "genero", "contacto_nombre", "contexto_extra", "direccion"],
         umbrales_por_campo=UMBRALES_POR_CAMPO,
     )
     if sugerencias:
@@ -485,7 +497,18 @@ def procesar_un_lead(lead):
     # Datos de confianza insuficiente: se juntan aquí para dejarlos en 'notas' como pistas
     # a verificar, nunca en los campos verificados de la Sheet.
     sugerencias_totales = []
-    CAMPOS = ["email", "telefono", "instagram", "website", "genero", "aforo", "contacto_nombre", "contexto_extra"]
+    CAMPOS = ["email", "telefono", "instagram", "website", "genero", "aforo", "contacto_nombre", "contexto_extra", "direccion", "imagen_url", "icono"]
+
+    # 0. Google Places, si está configurado (opcional — ver lib/google_places.py): dato
+    # estructurado y verificado por Google, se trata como confianza 'alta' directamente. No
+    # tiene email (ese campo no existe en Places), pero da dirección/teléfono/web fiables desde
+    # el principio y extrae/sube la foto verificada a Supabase Storage (imagen_url e icono).
+    # Solo se llama si al lead le falta alguno de esos tres datos o la foto — no gasta cuota en vano.
+    if google_places.esta_configurado() and not (lead.get("direccion") and lead.get("telefono") and lead.get("website") and lead.get("imagen_url")):
+        datos_places = google_places.buscar_lugar(nombre_sala, ciudad, lead_id=lead_id)
+        if datos_places:
+            _combinar(datos, datos_places, CAMPOS)
+            print(f"[scout.py] Google Places aportó: dirección={datos.get('direccion') or 'N/A'}, teléfono={datos.get('telefono') or 'N/A'}, web={datos.get('website') or 'N/A'}, imagen={datos.get('imagen_url') or 'N/A'}")
 
     # 1. Una única búsqueda amplia + extracción estructurada desde snippets + Regex de correos.
     if tipo == "ayuntamiento":
@@ -593,13 +616,14 @@ def procesar_un_lead(lead):
     aforo = datos.get("aforo")
     contacto_nombre = _limpiar(datos.get("contacto_nombre"))
     contexto_extra = _limpiar(datos.get("contexto_extra"))
+    direccion = _limpiar(datos.get("direccion"))
 
     # Validar formato básico de email
     if email and "@" not in email:
         email = None
 
-    if email or telefono or instagram or web or genero or aforo or contacto_nombre or contexto_extra:
-        print(f"[scout.py] [SUCCESS] Datos encontrados - Email: {email or 'N/A'}, Teléfono: {telefono or 'N/A'}, Instagram: {instagram or 'N/A'}, Web: {web or 'N/A'}, Género: {genero or 'N/A'}, Aforo: {aforo or 'N/A'}, Contacto: {contacto_nombre or 'N/A'}")
+    if email or telefono or instagram or web or genero or aforo or contacto_nombre or contexto_extra or direccion:
+        print(f"[scout.py] [SUCCESS] Datos encontrados - Email: {email or 'N/A'}, Teléfono: {telefono or 'N/A'}, Instagram: {instagram or 'N/A'}, Web: {web or 'N/A'}, Género: {genero or 'N/A'}, Aforo: {aforo or 'N/A'}, Contacto: {contacto_nombre or 'N/A'}, Dirección: {direccion or 'N/A'}")
         
         notas_previas = lead.get("notas") or ""
         nuevas_notas = (
@@ -633,7 +657,15 @@ def procesar_un_lead(lead):
         if genero and (not lead.get("genero") or lead.get("genero").strip() == ""):
             datos_actualizar["genero"] = genero
 
-        if aforo and (not lead.get("aforo") or int(lead.get("aforo")) == 0):
+        try:
+            aforo_actual = int(lead.get("aforo") or 0)
+        except (ValueError, TypeError):
+            # Dato corrupto ya existente en la Sheet (p. ej. texto en vez de número) — no debe
+            # tumbar todo el lote en paralelo por un solo lead con basura en esa celda.
+            print(f"[scout.py] Aviso: 'aforo' de '{nombre_sala}' no es numérico ({lead.get('aforo')!r}), se ignora al comparar.")
+            aforo_actual = 0
+
+        if aforo and aforo_actual == 0:
             print(f"[scout.py] Aforo detectado: {aforo} personas.")
             datos_actualizar["aforo"] = aforo
 
@@ -641,6 +673,8 @@ def procesar_un_lead(lead):
             datos_actualizar["contacto_nombre"] = contacto_nombre
         if contexto_extra and not lead.get("contexto_extra"):
             datos_actualizar["contexto_extra"] = contexto_extra
+        if direccion and not lead.get("direccion"):
+            datos_actualizar["direccion"] = direccion
 
         res = sheets.actualizar_datos_lead(lead_id, datos_actualizar)
 
@@ -669,7 +703,8 @@ def procesar_un_lead(lead):
                 "genero": genero or "",
                 "aforo": aforo or "",
                 "contacto_nombre": contacto_nombre or "",
-                "contexto_extra": contexto_extra or ""
+                "contexto_extra": contexto_extra or "",
+                "direccion": direccion or ""
             }
     else:
         print(f"[scout.py] [ERROR] No se logró extraer ningún dato de contacto para '{nombre_sala}'.")
@@ -795,13 +830,49 @@ def enriquecer_leads_sin_contacto(limite_leads=3, region=None, enviar_webhook=Tr
         
     return leads_enriquecidos_detalles
 
+
+def enriquecer_direcciones_faltantes(limite=30):
+    """
+    Backfill dirigido: busca la dirección postal de leads ACTIVOS que aún no la tienen, aunque
+    ya estén enriquecidos en el resto de campos. `enriquecer_leads_sin_contacto` no los tocaría
+    porque ya tienen email/teléfono — esta función filtra específicamente por 'direccion' vacía.
+
+    Reutiliza procesar_un_lead tal cual: solo rellena huecos (nunca sobreescribe un dato ya
+    verificado), así que es seguro reejecutar sobre leads que ya tienen otros campos completos.
+    """
+    leads = sheets.obtener_leads()
+    activos = [l for l in leads if l.get("estado") not in (estados.DESCARTADO, estados.NO_INTERESADO)]
+    sin_direccion = [l for l in activos if not (l.get("direccion") or "").strip()]
+    print(f"[scout.py] {len(sin_direccion)} leads activos sin dirección postal.")
+
+    if not sin_direccion:
+        return []
+
+    leads_a_procesar = sin_direccion[:limite]
+    max_workers = min(3, len(leads_a_procesar))
+    print(f"[scout.py] Buscando dirección para {len(leads_a_procesar)} leads con {max_workers} hilos...")
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        resultados = list(executor.map(procesar_un_lead, leads_a_procesar))
+
+    tocados = [r for r in resultados if r is not None]
+    con_direccion = [r for r in tocados if r.get("direccion")]
+    print(f"[scout.py] Backfill de direcciones finalizado. Leads procesados: {len(tocados)}, con dirección encontrada: {len(con_direccion)}.")
+    return tocados
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Agente Scout para enriquecer leads.")
     parser.add_argument("--limit", type=int, default=3, help="Límite de leads a procesar.")
     parser.add_argument("--all", action="store_true", help="Procesar todos los leads incompletos.")
     parser.add_argument("--region", type=str, default=None, help="Filtrar por región o provincia.")
+    parser.add_argument("--direcciones", action="store_true", help="Backfill: buscar solo la dirección postal de leads que aún no la tienen.")
     args = parser.parse_args()
-    
+
     limite = 99999 if args.all else args.limit
-    enriquecer_leads_sin_contacto(limite_leads=limite, region=args.region)
+    if args.direcciones:
+        enriquecer_direcciones_faltantes(limite=limite)
+    else:
+        enriquecer_leads_sin_contacto(limite_leads=limite, region=args.region)

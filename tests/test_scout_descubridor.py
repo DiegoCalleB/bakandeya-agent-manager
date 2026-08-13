@@ -105,7 +105,7 @@ def test_descubrir_multitipo(mocker, mock_db):
         queries_buscadas.append(query)
         return [{"title": "Snippet mock", "href": "https://example.com", "body": "Body mock"}]
 
-    def mock_extraer(resultados, tipo, region):
+    def mock_extraer(resultados, tipo, region, genero=None):
         if tipo == "discoteca":
             return [{"nombre": "Discoteca Industrial Copera", "ciudad": "Granada", "fuente": "[1]"}]
         elif tipo == "festival":

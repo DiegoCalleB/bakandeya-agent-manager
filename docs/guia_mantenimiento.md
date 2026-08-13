@@ -257,15 +257,23 @@ python agents/scout.py --limit 3 --region Granada
 
 Flujo (`enriquecer_leads_sin_contacto`), por cada lead:
 1. Infiere el `tipo` si falta (`inferir_tipo_lead`, por palabras clave).
-2. **Búsqueda amplia** + `extraer_datos_contacto_de_snippets` (1 sola llamada a la IA).
-3. Si la web encontrada es "standalone" (no red social), la descarga
+2. **Google Places** (`lib/google_places.py`, opcional — solo si `GOOGLE_PLACES_API_KEY` está
+   configurada): Text Search + Place Details para dirección/teléfono/web verificados por
+   Google. Se acepta como confianza `alta` directamente (dato estructurado, no texto
+   interpretado por un LLM) siempre que el nombre devuelto se parezca lo bastante al buscado
+   (`difflib`, umbral 0.55). **Places no tiene email** — ese campo no existe en su API; solo
+   adelanta trabajo dándole al paso 3 una web oficial ya verificada en vez de tener que
+   adivinarla de snippets. Cuota: los campos de teléfono/web caen en el tier "Enterprise" de
+   Google, con solo 1.000 llamadas gratis/mes — cuidado con lotes muy grandes (`--all`).
+3. **Búsqueda amplia** + `extraer_datos_contacto_de_snippets` (1 sola llamada a la IA).
+4. Si la web encontrada es "standalone" (no red social), la descarga
    (`descargar_texto_pagina`, `requests` + `BeautifulSoup`) y extrae de nuevo
    (`extraer_datos_contacto`) — es la mejor fuente de aforo/género.
-4. Si sigue faltando email, un **fallback dirigido** (una búsqueda más, más específica).
-5. Combina todo con `_combinar()` (primera fuente que aporta un dato gana, nunca se sobrescribe).
-6. Guarda solo los datos de **confianza alta** (contacto) o **media** (género/aforo) —
+5. Si sigue faltando email, un **fallback dirigido** (una búsqueda más, más específica).
+6. Combina todo con `_combinar()` (primera fuente que aporta un dato gana, nunca se sobrescribe).
+7. Guarda solo los datos de **confianza alta** (contacto) o **media** (género/aforo) —
    ver sección 9 sobre `_procesar_campos_extraidos`.
-7. **Transición de estado:** si al final sigue sin email → `estados.SIN_CONTACTO`.
+8. **Transición de estado:** si al final sigue sin email → `estados.SIN_CONTACTO`.
 
 **Rate limiting:** `time.sleep(random.uniform(3, 5))` entre cada lead procesado.
 

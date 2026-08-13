@@ -2,9 +2,9 @@ name: Enviador
 
 on:
   schedule:
-    # 09:30 hora de Madrid en horario de verano (CEST, UTC+2) -> 07:30 UTC.
-    # En invierno (CET, UTC+1) se ejecutará a las 08:30 local. Ver nota en scout.yml.
-    - cron: "30 7 * * *"
+    # Cada 8 horas (00:00 / 08:00 / 16:00 UTC), para no dejar un email aprobado
+    # esperando más de 8h a que salga.
+    - cron: "0 0,8,16 * * *"
   workflow_dispatch: {}
 
 concurrency:

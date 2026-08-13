@@ -63,18 +63,31 @@ def hilos_registrados():
     """
     return []
 
-@pytest.fixture(autouse=True)
-def mock_sheets_api(mocker, mock_db, hilos_registrados):
+@pytest.fixture
+def mock_db_medios():
     """
-    Mockea automáticamente todas las funciones del módulo lib.sheets para usar la base de datos en memoria.
+    Simula la hoja 'medios' (radio/TV/prensa/canales), vacía por defecto — cada test que la
+    necesite la puebla explícitamente.
     """
-    def mock_obtener_leads(estado=None):
-        if estado:
-            return [row for row in mock_db if row["estado"] == estado]
-        return mock_db
+    return []
 
-    def mock_actualizar_estado_lead(lead_id, nuevo_estado, pitch=None, notas=None):
-        for row in mock_db:
+@pytest.fixture(autouse=True)
+def mock_sheets_api(mocker, mock_db, mock_db_medios, hilos_registrados):
+    """
+    Mockea automáticamente todas las funciones del módulo lib.sheets para usar bases de datos
+    en memoria. `nombre_hoja` enruta entre 'leads' (mock_db) y 'medios' (mock_db_medios).
+    """
+    def _hoja(nombre_hoja):
+        return mock_db_medios if nombre_hoja == "medios_scout" else mock_db
+
+    def mock_obtener_leads(estado=None, nombre_hoja="leads", **kwargs):
+        datos = _hoja(nombre_hoja)
+        if estado:
+            return [row for row in datos if row["estado"] == estado]
+        return datos
+
+    def mock_actualizar_estado_lead(lead_id, nuevo_estado, pitch=None, notas=None, nombre_hoja="leads", **kwargs):
+        for row in _hoja(nombre_hoja):
             if str(row["id"]) == str(lead_id):
                 row["estado"] = nuevo_estado
                 if pitch is not None:
@@ -84,8 +97,8 @@ def mock_sheets_api(mocker, mock_db, hilos_registrados):
                 return True
         return False
 
-    def mock_actualizar_datos_lead(lead_id, datos_dict):
-        for row in mock_db:
+    def mock_actualizar_datos_lead(lead_id, datos_dict, nombre_hoja="leads", **kwargs):
+        for row in _hoja(nombre_hoja):
             if str(row["id"]) == str(lead_id):
                 for key, val in datos_dict.items():
                     if val is not None:
@@ -93,25 +106,45 @@ def mock_sheets_api(mocker, mock_db, hilos_registrados):
                 return True
         return False
 
-    def mock_crear_leads(lista_datos_dict):
+    def mock_crear_leads(lista_datos_dict, nombre_hoja="leads", **kwargs):
+        destino = _hoja(nombre_hoja)
         for datos_dict in lista_datos_dict:
-            row_dict = {
-                "id": datos_dict.get("id", ""),
-                "nombre_sala": datos_dict.get("nombre_sala", ""),
-                "ciudad": datos_dict.get("ciudad", ""),
-                "region": datos_dict.get("region", ""),
-                "aforo": datos_dict.get("aforo", 0),
-                "genero": datos_dict.get("genero", ""),
-                "tipo": datos_dict.get("tipo", ""),
-                "email_contacto": datos_dict.get("email_contacto", ""),
-                "fuente": datos_dict.get("fuente", ""),
-                "estado": datos_dict.get("estado", "nuevo"),
-                "pitch_generado": datos_dict.get("pitch_generado", ""),
-                "fecha_envio": datos_dict.get("fecha_envio", ""),
-                "fecha_ultima_respuesta": datos_dict.get("fecha_ultima_respuesta", ""),
-                "notas": datos_dict.get("notas", "")
-            }
-            mock_db.append(row_dict)
+            if nombre_hoja == "medios_scout":
+                row_dict = {
+                    "id": datos_dict.get("id", ""),
+                    "nombre_medio": datos_dict.get("nombre_medio", ""),
+                    "tipo_medio": datos_dict.get("tipo_medio", ""),
+                    "ciudad": datos_dict.get("ciudad", ""),
+                    "alcance": datos_dict.get("alcance", ""),
+                    "email_contacto": datos_dict.get("email_contacto", ""),
+                    "enfoque_editorial": datos_dict.get("enfoque_editorial", ""),
+                    "fuente": datos_dict.get("fuente", ""),
+                    "estado": datos_dict.get("estado", "nuevo"),
+                    "pitch_generado": datos_dict.get("pitch_generado", ""),
+                    "fecha_envio": datos_dict.get("fecha_envio", ""),
+                    "fecha_ultima_respuesta": datos_dict.get("fecha_ultima_respuesta", ""),
+                    "notas": datos_dict.get("notas", ""),
+                    "band_id": datos_dict.get("band_id", "")
+                }
+            else:
+                row_dict = {
+                    "id": datos_dict.get("id", ""),
+                    "nombre_sala": datos_dict.get("nombre_sala", ""),
+                    "ciudad": datos_dict.get("ciudad", ""),
+                    "region": datos_dict.get("region", ""),
+                    "aforo": datos_dict.get("aforo", 0),
+                    "genero": datos_dict.get("genero", ""),
+                    "tipo": datos_dict.get("tipo", ""),
+                    "email_contacto": datos_dict.get("email_contacto", ""),
+                    "fuente": datos_dict.get("fuente", ""),
+                    "estado": datos_dict.get("estado", "nuevo"),
+                    "pitch_generado": datos_dict.get("pitch_generado", ""),
+                    "fecha_envio": datos_dict.get("fecha_envio", ""),
+                    "fecha_ultima_respuesta": datos_dict.get("fecha_ultima_respuesta", ""),
+                    "notas": datos_dict.get("notas", ""),
+                    "band_id": datos_dict.get("band_id", "")
+                }
+            destino.append(row_dict)
         return True
 
     def mock_registrar_mensaje_hilo(lead_id, nombre_sala, fecha, remitente, remitente_nombre, asunto, mensaje, mensaje_id=None):
@@ -129,6 +162,15 @@ def mock_sheets_api(mocker, mock_db, hilos_registrados):
     mocker.patch("lib.sheets.registrar_mensaje_hilo", side_effect=mock_registrar_mensaje_hilo)
     mocker.patch("lib.sheets.obtener_cliente_sheets", return_value=None)
 
+    # Multi-tenant: en los tests no hay 'registro_bandas'/'dossier_epk'/'config_autonomia' reales
+    # (esas hojas las gestiona Bakandeya_AIStudio_Application). Mockeamos el punto de lectura
+    # común (_leer_filas_hoja_externa) para que devuelva [] limpiamente en vez de que cada test
+    # dispare el camino de excepción de obtener_cliente_sheets() -> None. Con [] cada función
+    # cae en su fallback real (una única banda "Bakandeya" activa, EPK vacío que se enriquece
+    # con el JSON estático, autonomía con los valores por defecto) — el mismo comportamiento
+    # single-tenant que tenían los agentes antes de multi-tenant.
+    mocker.patch("lib.sheets._leer_filas_hoja_externa", return_value=[])
+
     return mock_db
 
 @pytest.fixture
@@ -143,7 +185,7 @@ def mock_gmail_api(mocker, emails_enviados):
     """
     Mockea automáticamente el envío y la lectura de correos en lib.gmail_client.
     """
-    def mock_enviar_email(destinatario, asunto, cuerpo_texto, ruta_adjunto=None):
+    def mock_enviar_email(destinatario, asunto, cuerpo_texto, ruta_adjunto=None, epk=None):
         emails_enviados.append({
             "destinatario": destinatario,
             "asunto": asunto,
@@ -152,7 +194,7 @@ def mock_gmail_api(mocker, emails_enviados):
         })
         return {"id": f"msg_mock_{len(emails_enviados)}"}
 
-    def mock_crear_borrador(destinatario, asunto, cuerpo_texto, thread_id=None, in_reply_to=None, ruta_adjunto=None):
+    def mock_crear_borrador(destinatario, asunto, cuerpo_texto, thread_id=None, in_reply_to=None, ruta_adjunto=None, epk=None):
         emails_enviados.append({
             "destinatario": destinatario,
             "asunto": asunto,
@@ -161,7 +203,7 @@ def mock_gmail_api(mocker, emails_enviados):
         })
         return {"id": f"draft_mock_{len(emails_enviados)}"}
 
-    def mock_leer_respuestas(query="is:unread"):
+    def mock_leer_respuestas(query="is:unread", band_id=None):
         return [
             {
                 "id": "reply_mock_001",
@@ -177,6 +219,12 @@ def mock_gmail_api(mocker, emails_enviados):
     mocker.patch("lib.gmail_client.leer_respuestas", side_effect=mock_leer_respuestas)
     mocker.patch("lib.gmail_client.marcar_como_leido", return_value=True)
     mocker.patch("lib.gmail_client.obtener_servicio_gmail", return_value=None)
+    mocker.patch("lib.gmail_client.es_modo_simulado", return_value=True)
+    # Multi-tenant: enviador.py verifica que la cuenta de Gmail conectada coincide con el email
+    # oficial de la banda en su EPK antes de enviar. En tests simulamos que SÍ coincide (el email
+    # de contacto de band-bakandeya en data/epk_bakandeya.json) para no bloquear los flujos
+    # existentes; un test dedicado cubre el caso de bloqueo por email equivocado.
+    mocker.patch("lib.gmail_client.obtener_email_conectado", return_value="diego.delacalleb@gmail.com")
 
     return emails_enviados
 
@@ -198,6 +246,20 @@ def mock_claude_api(mocker):
 
     mocker.patch("lib.claude_client.generar_texto", side_effect=mock_generar_texto)
     mocker.patch("lib.claude_client.obtener_cliente_claude", return_value=None)
+
+@pytest.fixture(autouse=True)
+def mock_google_places(mocker):
+    """
+    Los tests NUNCA deben llamar a la Google Places API real — ni siquiera si el .env local
+    del desarrollador tiene una GOOGLE_PLACES_API_KEY de verdad configurada (para probarlo en
+    local a mano). Sin este mock, un test run haría llamadas reales y no deterministas (y
+    gastaría cuota real) en cuanto esa variable exista. Por defecto simulamos que Places no
+    está configurado, igual que en un entorno sin la key; un test dedicado a la integración
+    sobrescribe esto explícitamente.
+    """
+    mocker.patch("lib.google_places.esta_configurado", return_value=False)
+    mocker.patch("lib.google_places.buscar_lugar", return_value=None)
+
 
 @pytest.fixture(autouse=True)
 def mock_gemini_api(mocker):

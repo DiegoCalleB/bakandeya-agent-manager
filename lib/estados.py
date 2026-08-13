@@ -52,13 +52,16 @@ def es_transicion_valida(estado_actual, nuevo_estado):
     return nuevo_estado in TRANSICIONES.get(estado_actual, set())
 
 
-def transicionar(lead, nuevo_estado, notas=None, pitch=None):
+def transicionar(lead, nuevo_estado, notas=None, pitch=None, nombre_hoja="leads"):
     """
     Cambia el estado de un lead validándolo contra el grafo de transiciones.
 
     `lead` es el dict de la fila (debe tener 'id' y 'estado'). Si la transición no es válida,
     NO escribe nada, loguea el intento y devuelve False — así un bug en un agente no puede
     llevar un lead a un estado imposible.
+
+    `nombre_hoja` indica en qué pestaña de la Google Sheet vive la fila (por defecto 'leads';
+    también sirve para 'medios', que reutiliza el mismo grafo de transiciones).
     """
     lead_id = lead.get("id")
     estado_actual = (lead.get("estado") or "").strip()
@@ -72,7 +75,7 @@ def transicionar(lead, nuevo_estado, notas=None, pitch=None):
         return False
 
     print(f"[estados] {lead_id}: {estado_actual} -> {nuevo_estado}")
-    
+
     # Si pasa a ESPERANDO, también registramos la fecha de envío actual automáticamente
     if nuevo_estado == ESPERANDO:
         from datetime import datetime
@@ -82,6 +85,6 @@ def transicionar(lead, nuevo_estado, notas=None, pitch=None):
             datos["pitch_generado"] = pitch
         if notas is not None:
             datos["notas"] = notas
-        return sheets.actualizar_datos_lead(lead_id, datos)
-        
-    return sheets.actualizar_estado_lead(lead_id, nuevo_estado, pitch=pitch, notas=notas)
+        return sheets.actualizar_datos_lead(lead_id, datos, nombre_hoja=nombre_hoja)
+
+    return sheets.actualizar_estado_lead(lead_id, nuevo_estado, pitch=pitch, notas=notas, nombre_hoja=nombre_hoja)

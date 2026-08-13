@@ -3,11 +3,13 @@ import os
 # Asegurar que el directorio raíz está en el path para las importaciones de lib
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import json
 import random
 import lib.sheets as sheets
 import lib.gemini_client as gemini_client
 import lib.estados as estados
+import lib.bandas as bandas
+
+BAND_ID_DEFAULT = sheets.BAND_ID_DEFAULT
 
 # Enfoques de estilo para el pitch. Se elige UNO al azar por lead en Python (no se le
 # deja la decisión al LLM): dejarlo elegir "según convenga" hace que, sin memoria entre
@@ -19,17 +21,12 @@ ENFOQUES_ESTILO = [
     ("Colaborativo/Cercano", "Enfatiza la coorganización, taquilla compartida y el apoyo a las salas."),
 ]
 
-def cargar_epk():
+def cargar_epk(band_id=BAND_ID_DEFAULT):
     """
-    Carga los datos del EPK de la banda desde el archivo JSON de datos.
+    Carga el EPK de una banda (multi-tenant): 'dossier_epk' en la Google Sheet, enriquecido con
+    el JSON curado a mano para band-bakandeya. Ver lib/bandas.py para el detalle de la fusión.
     """
-    ruta_epk = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "epk_bakandeya.json")
-    try:
-        with open(ruta_epk, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"[redactor.py] Error al cargar el EPK: {e}")
-        return {}
+    return bandas.cargar_epk_banda(band_id)
 
 
 def _detectar_idioma(ciudad, region):
@@ -68,6 +65,10 @@ def generar_pitch_para_lead(lead, epk):
     genero = lead.get("genero") or "Varios"
     contacto_nombre = (lead.get("contacto_nombre") or "").strip()
     contexto_extra = (lead.get("contexto_extra") or "").strip()
+
+    # Nombre con el que firma el email: el de gestión definido en el EPK de la banda (multi-tenant).
+    nombre_firma = (epk.get("contacto") or {}).get("nombre") or "el equipo de management"
+    nombre_banda = epk.get("nombre") or nombre_firma
 
     idioma = _detectar_idioma(ciudad, region)
 
@@ -119,7 +120,7 @@ def generar_pitch_para_lead(lead, epk):
         "   - PROHIBIDO ENLACE AL DOSSIER: El dossier completo en PDF va FÍSICAMENTE ADJUNTO al correo. Menciónalo de forma natural una vez "
         "(ej: 'te adjunto nuestro dossier en PDF con más info'), pero queda TOTALMENTE PROHIBIDO incluir cualquier enlace URL o link al dossier dentro del texto.\n"
         f"6. SALUDO: {instruccion_saludo} Prohibido cualquier placeholder o corchete como '[Nombre del programador]', '[Fecha]', '[Responsable]', etc. "
-        "Esto también aplica a la FIRMA final: firma siempre al final del email con 'Bakandeya IA Management', nunca con un placeholder como '[Tu Nombre]' ni con firmas personales sueltas.\n"
+        f"Esto también aplica a la FIRMA final: firma siempre al final del email con '{nombre_firma}', nunca con un placeholder como '[Tu Nombre]' ni con firmas personales sueltas.\n"
         f"7. PERSONALIZACIÓN REAL: {instruccion_personalizacion}\n"
         "8. LONGITUD BREVE: Máximo 120-140 palabras en el cuerpo (sin contar asunto ni firma). Un programador "
         "recibe decenas de emails al día y no va a leer un muro de texto. Máximo 2-3 párrafos CORTOS. "
@@ -130,10 +131,9 @@ def generar_pitch_para_lead(lead, epk):
         "9. TONO DE LA LLAMADA A LA ACCIÓN: Nunca uses verbos que suenen a negociación formal o exigente ('discutir', "
         "'negociar', 'acordar condiciones'). Usa un tono cercano e invitador: 'nos encantaría explorar...', "
         "'quedamos a vuestra disposición para...', 'nos encantaría hablar de fechas y detalles'.\n"
-        "10. PRECISIÓN SOBRE LOS INSTRUMENTOS: Solo la percusión de José Filgueira está construida con materiales "
-        "reciclados (luthería urbana). Elyar Pashang toca handpan y percusión étnica (darbuka, daf) — instrumentos "
-        "originales, NO reciclados. No atribuyas 'reciclado' a los instrumentos de Elyar ni generalices diciendo "
-        "que 'las percusiones de José y Elyar' son recicladas.\n"
+        f"10. PRECISIÓN SOBRE DATOS DE LA BANDA: No inventes ni generalices datos que no estén en la información "
+        f"del EPK de arriba (integrantes, instrumentos, trayectoria). Si un dato concreto no aparece ahí, no lo "
+        f"menciones — mejor omitirlo que inventarlo.{(' ' + epk.get('nota_precision_instrumentos', '')) if epk.get('nota_precision_instrumentos') else ''}\n"
         "11. 'ELECTROBASUREO' NO ES UN GANCHO: es un término descriptivo del estilo, no un titular. PROHIBIDO "
         "usarlo en el ASUNTO o como primera frase/gancho de apertura del email. Si aparece, que sea de pasada y "
         "más adelante en el cuerpo (ej: 'una fusión que llamamos electrobasureo'), nunca como lo primero que se lee. "
@@ -154,7 +154,7 @@ def generar_pitch_para_lead(lead, epk):
             f"- Ciudad/Región: {ciudad} / {region}\n\n"
             "Devuelve la respuesta en el formato exacto:\n"
             "ASUNTO: [Asunto en el idioma correspondiente, llamativo y sin repetir patrones]\n\n"
-            "[Cuerpo del email, 2-3 párrafos CORTOS y directos, incluyendo enlaces y la firma 'Bakandeya IA Management']"
+            f"[Cuerpo del email, 2-3 párrafos CORTOS y directos, incluyendo enlaces y la firma '{nombre_firma}']"
         )
 
         reglas_redaccion = (
@@ -173,7 +173,7 @@ def generar_pitch_para_lead(lead, epk):
             f"- Estilo habitual/Género del festival: {genero}\n\n"
             "Devuelve la respuesta en el formato exacto:\n"
             "ASUNTO: [Asunto en el idioma correspondiente, llamativo y sin repetir patrones]\n\n"
-            "[Cuerpo del email, 2-3 párrafos CORTOS y directos, incluyendo enlaces y la firma 'Bakandeya IA Management']"
+            f"[Cuerpo del email, 2-3 párrafos CORTOS y directos, incluyendo enlaces y la firma '{nombre_firma}']"
         )
 
         reglas_redaccion = (
@@ -196,7 +196,7 @@ def generar_pitch_para_lead(lead, epk):
             f"- Estilo habitual de la sala: {genero}\n\n"
             "Devuelve la respuesta en el formato exacto:\n"
             "ASUNTO: [Asunto en el idioma correspondiente, llamativo y sin repetir patrones]\n\n"
-            "[Cuerpo del email, 2-3 párrafos CORTOS y directos, incluyendo enlaces y la firma 'Bakandeya IA Management']"
+            f"[Cuerpo del email, 2-3 párrafos CORTOS y directos, incluyendo enlaces y la firma '{nombre_firma}']"
         )
 
         reglas_redaccion = (
@@ -206,7 +206,7 @@ def generar_pitch_para_lead(lead, epk):
         )
 
     system_prompt = (
-        "Eres Bakandeya IA Management, el sistema de booking y gestión inteligente de la banda de música Bakandeya.\n"
+        f"Eres {nombre_firma}, el sistema de booking y gestión inteligente de la banda de música {nombre_banda}.\n"
         "Tu objetivo es escribir propuestas de contratación de conciertos (pitches) profesionales, "
         "cercanas y persuasivas.\n\n"
         f"Información de la banda (EPK):\n"
@@ -252,6 +252,9 @@ def generar_pitch_medio(lead, epk):
     alcance = lead.get("alcance") or ""
     enfoque_editorial = (lead.get("enfoque_editorial") or "").strip()
 
+    nombre_firma = (epk.get("contacto") or {}).get("nombre") or "el equipo de management"
+    nombre_banda = epk.get("nombre") or nombre_firma
+
     idioma = _detectar_idioma(ciudad, "")
     nombre_enfoque, descripcion_enfoque = random.choice(ENFOQUES_PRENSA)
 
@@ -279,20 +282,18 @@ def generar_pitch_medio(lead, epk):
         "mención, feature), no que os contraten para tocar.\n"
         "6. ENLACES INTEGRADOS: inserta de forma fluida los enlaces del EPK dentro del texto, sin listas al "
         "final. El dossier/press kit en PDF va ADJUNTO (no como link) — menciónalo de forma natural una vez.\n"
-        "7. SALUDO: si no conoces el nombre de una persona concreta de la redacción, saluda de forma cercana y "
+        f"7. SALUDO: si no conoces el nombre de una persona concreta de la redacción, saluda de forma cercana y "
         "natural sin placeholders (ej: 'Hola equipo de {nombre_medio},', 'Buenas,'). Firma siempre al final con "
-        "'Bakandeya IA Management', nunca con un placeholder.\n"
+        f"'{nombre_firma}', nunca con un placeholder.\n"
         "8. LONGITUD BREVE: máximo 100-130 palabras en el cuerpo. Frases cortas, una idea por frase.\n"
         "9. LLAMADA A LA ACCIÓN DE PRENSA: ofrece explícitamente algo concreto y fácil de aceptar — una "
         "entrevista breve, fotos/vídeo en alta calidad, o el dossier de prensa adjunto. Nunca un tono de "
         "negociación ('discutir', 'acordar'); sí un tono cercano ('nos encantaría contaros más', 'estamos a "
         "vuestra disposición para lo que necesitéis').\n"
-        "10. PRECISIÓN SOBRE LOS INSTRUMENTOS: solo la percusión de José Filgueira está construida con "
-        "materiales reciclados. Elyar Pashang toca handpan y percusión étnica (darbuka, daf) — instrumentos "
-        "originales, NO reciclados. No los generalices juntos.\n"
-        "11. 'ELECTROBASUREO' NO ES EL TITULAR: es un término descriptivo, no el gancho de apertura. Si "
-        "aparece, que sea de pasada más adelante en el cuerpo.\n"
-        "12. PUNTUACIÓN NATURAL: como escribiría una persona real, no una carta formal. Nada de 'Hola, "
+        f"10. PRECISIÓN SOBRE DATOS DE LA BANDA: no inventes ni generalices datos que no estén en el EPK de arriba "
+        f"(integrantes, instrumentos, trayectoria). Mejor omitir un dato que inventarlo."
+        f"{(' ' + epk.get('nota_precision_instrumentos', '')) if epk.get('nota_precision_instrumentos') else ''}\n"
+        "11. PUNTUACIÓN NATURAL: como escribiría una persona real, no una carta formal. Nada de 'Hola, "
         "[nombre],' con coma justo tras 'Hola'."
     )
 
@@ -304,11 +305,11 @@ def generar_pitch_medio(lead, epk):
         f"- Ciudad/Alcance: {ciudad} / {alcance}\n\n"
         "Devuelve la respuesta en el formato exacto:\n"
         "ASUNTO: [Asunto en el idioma correspondiente, llamativo y sin repetir patrones]\n\n"
-        "[Cuerpo del email, 2-3 párrafos CORTOS y directos, incluyendo enlaces y la firma 'Bakandeya IA Management']"
+        f"[Cuerpo del email, 2-3 párrafos CORTOS y directos, incluyendo enlaces y la firma '{nombre_firma}']"
     )
 
     system_prompt = (
-        "Eres Bakandeya IA Management, el sistema de comunicación y prensa de la banda de música Bakandeya.\n"
+        f"Eres {nombre_firma}, el sistema de comunicación y prensa de la banda de música {nombre_banda}.\n"
         "Tu objetivo es escribir emails de contacto de prensa profesionales, cercanos y persuasivos que "
         "consigan cobertura editorial — NO propuestas de contratación de conciertos.\n\n"
         f"Información de la banda (EPK):\n"
@@ -333,28 +334,32 @@ def generar_pitch_medio(lead, epk):
     )
 
 
-def procesar_nuevos_leads(limite_leads=9999, lead_id_especifico=None, regenerar=False):
+def procesar_nuevos_leads(limite_leads=9999, lead_id_especifico=None, regenerar=False, band_id=BAND_ID_DEFAULT):
     """
-    Busca leads en estado 'nuevo' (o cualquiera si se especifica id o regenerar). Si tienen email, les genera un pitch
-    usando Gemini y la información del EPK, y actualiza su estado a 'pendiente_aprobacion'.
+    Busca leads en estado 'nuevo' (o cualquiera si se especifica id o regenerar) DE UNA BANDA
+    concreta (multi-tenant: filtra por 'band_id', usando band-bakandeya si el lead es de antes de
+    multi-tenant y no tiene ese campo). Si tienen email, les genera un pitch usando Gemini y el
+    EPK/firma de esa banda, y actualiza su estado a 'pendiente_aprobacion'.
     """
-    print("[redactor.py] Iniciando procesamiento de nuevos leads...")
+    print(f"[redactor.py] Iniciando procesamiento de nuevos leads (banda: {band_id})...")
     if lead_id_especifico:
         leads = sheets.obtener_leads()
         leads = [l for l in leads if l.get("id") == lead_id_especifico]
         print(f"[redactor.py] Filtrando por ID de lead específico: '{lead_id_especifico}'. Encontrados: {len(leads)}")
-    elif regenerar:
-        leads_nuevos = sheets.obtener_leads(estado=estados.NUEVO)
-        leads_pendientes = sheets.obtener_leads(estado=estados.PENDIENTE)
-        leads = leads_nuevos + leads_pendientes
-        print(f"[redactor.py] Regenerando pitches. Leads en 'nuevo': {len(leads_nuevos)}, en 'pendiente_aprobacion': {len(leads_pendientes)}")
     else:
-        leads = sheets.obtener_leads(estado=estados.NUEVO)
+        if regenerar:
+            leads_nuevos = sheets.obtener_leads(estado=estados.NUEVO)
+            leads_pendientes = sheets.obtener_leads(estado=estados.PENDIENTE)
+            leads = leads_nuevos + leads_pendientes
+            print(f"[redactor.py] Regenerando pitches. Leads en 'nuevo': {len(leads_nuevos)}, en 'pendiente_aprobacion': {len(leads_pendientes)}")
+        else:
+            leads = sheets.obtener_leads(estado=estados.NUEVO)
+        leads = [l for l in leads if (l.get("band_id") or BAND_ID_DEFAULT) == band_id]
 
-    epk = cargar_epk()
+    epk = cargar_epk(band_id)
 
-    if not epk:
-        print("[redactor.py] EPK no encontrado o vacío. Abortando generación.")
+    if not epk.get("nombre") and not epk.get("descripcion_corta"):
+        print(f"[redactor.py] La banda '{band_id}' todavía no ha rellenado su EPK en la app (dossier_epk vacío). Abortando generación para no mandar pitches sin contenido real.")
         return 0
 
     procesados = 0
@@ -379,27 +384,29 @@ def procesar_nuevos_leads(limite_leads=9999, lead_id_especifico=None, regenerar=
     return procesados
 
 
-def procesar_nuevos_medios(limite_leads=9999, lead_id_especifico=None, regenerar=False):
+def procesar_nuevos_medios(limite_leads=9999, lead_id_especifico=None, regenerar=False, band_id=BAND_ID_DEFAULT):
     """
-    Igual que procesar_nuevos_leads, pero sobre la hoja 'medios' (radio/TV/prensa/canales) y
-    usando generar_pitch_medio en vez de generar_pitch_para_lead.
+    Igual que procesar_nuevos_leads, pero sobre la hoja 'medios_scout' (radio/TV/prensa/canales) y
+    usando generar_pitch_medio en vez de generar_pitch_para_lead. También filtra por 'band_id'.
     """
-    print("[redactor.py] Iniciando procesamiento de nuevos contactos de medios...")
+    print(f"[redactor.py] Iniciando procesamiento de nuevos contactos de medios (banda: {band_id})...")
     if lead_id_especifico:
-        medios = sheets.obtener_leads(nombre_hoja="medios")
+        medios = sheets.obtener_leads(nombre_hoja="medios_scout")
         medios = [m for m in medios if m.get("id") == lead_id_especifico]
         print(f"[redactor.py] Filtrando por ID de medio específico: '{lead_id_especifico}'. Encontrados: {len(medios)}")
-    elif regenerar:
-        medios_nuevos = sheets.obtener_leads(estado=estados.NUEVO, nombre_hoja="medios")
-        medios_pendientes = sheets.obtener_leads(estado=estados.PENDIENTE, nombre_hoja="medios")
-        medios = medios_nuevos + medios_pendientes
-        print(f"[redactor.py] Regenerando pitches de medios. En 'nuevo': {len(medios_nuevos)}, en 'pendiente_aprobacion': {len(medios_pendientes)}")
     else:
-        medios = sheets.obtener_leads(estado=estados.NUEVO, nombre_hoja="medios")
+        if regenerar:
+            medios_nuevos = sheets.obtener_leads(estado=estados.NUEVO, nombre_hoja="medios_scout")
+            medios_pendientes = sheets.obtener_leads(estado=estados.PENDIENTE, nombre_hoja="medios_scout")
+            medios = medios_nuevos + medios_pendientes
+            print(f"[redactor.py] Regenerando pitches de medios. En 'nuevo': {len(medios_nuevos)}, en 'pendiente_aprobacion': {len(medios_pendientes)}")
+        else:
+            medios = sheets.obtener_leads(estado=estados.NUEVO, nombre_hoja="medios_scout")
+        medios = [m for m in medios if (m.get("band_id") or BAND_ID_DEFAULT) == band_id]
 
-    epk = cargar_epk()
-    if not epk:
-        print("[redactor.py] EPK no encontrado o vacío. Abortando generación.")
+    epk = cargar_epk(band_id)
+    if not epk.get("nombre") and not epk.get("descripcion_corta"):
+        print(f"[redactor.py] La banda '{band_id}' todavía no ha rellenado su EPK en la app (dossier_epk vacío). Abortando generación para no mandar pitches sin contenido real.")
         return 0
 
     procesados = 0
@@ -413,7 +420,7 @@ def procesar_nuevos_medios(limite_leads=9999, lead_id_especifico=None, regenerar
 
         pitch = generar_pitch_medio(medio, epk)
         if pitch:
-            estados.transicionar(medio, estados.PENDIENTE, pitch=pitch, nombre_hoja="medios")
+            estados.transicionar(medio, estados.PENDIENTE, pitch=pitch, nombre_hoja="medios_scout")
             procesados += 1
         else:
             print(f"[redactor.py] No se pudo generar pitch para el medio {medio_id} ({nombre_medio}).")
@@ -422,18 +429,46 @@ def procesar_nuevos_medios(limite_leads=9999, lead_id_especifico=None, regenerar
     return procesados
 
 
+def procesar_todas_las_bandas(limite_leads=9999, regenerar=False, medios=False):
+    """
+    Punto de entrada multi-tenant por defecto: recorre 'registro_bandas' (solo cuentas activas)
+    y ejecuta procesar_nuevos_leads/procesar_nuevos_medios para cada una. Si 'registro_bandas'
+    todavía no existe o está vacía, sheets.obtener_bandas_activas() devuelve solo band-bakandeya
+    — así el comportamiento single-tenant original no cambia hasta que haya más bandas de verdad.
+    """
+    total = 0
+    for banda in bandas.listar_bandas_activas():
+        band_id = banda.get("band_id") or BAND_ID_DEFAULT
+        nombre_banda = banda.get("nombre_banda") or band_id
+        print(f"[redactor.py] === Banda: {nombre_banda} ({band_id}) ===")
+        if medios:
+            total += procesar_nuevos_medios(limite_leads=limite_leads, regenerar=regenerar, band_id=band_id)
+        else:
+            total += procesar_nuevos_leads(limite_leads=limite_leads, regenerar=regenerar, band_id=band_id)
+    return total
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Agente Redactor para generar pitches de leads o de medios.")
     parser.add_argument("--limit", type=int, default=3, help="Límite de filas a redactar.")
     parser.add_argument("--all", action="store_true", help="Procesar todas las filas en estado 'nuevo' que tengan email.")
-    parser.add_argument("--id", type=str, default=None, help="ID de una fila específica a redactar.")
+    parser.add_argument("--id", type=str, default=None, help="ID de una fila específica a redactar (ignora --banda).")
     parser.add_argument("--regenerate", action="store_true", help="Regenerar pitches ya en 'pendiente_aprobacion' además de los nuevos.")
-    parser.add_argument("--medios", action="store_true", help="Procesar la hoja 'medios' (prensa/radio/TV/canales) en vez de 'leads'.")
+    parser.add_argument("--medios", action="store_true", help="Procesar la hoja 'medios_scout' (prensa/radio/TV/canales) en vez de 'leads'.")
+    parser.add_argument("--banda", type=str, default=None, help="band_id concreto a procesar. Si se omite, procesa todas las bandas activas de 'registro_bandas'.")
     args = parser.parse_args()
 
     limite = 99999 if args.all else args.limit
-    if args.medios:
-        procesar_nuevos_medios(limite_leads=limite, lead_id_especifico=args.id, regenerar=args.regenerate)
+    if args.id:
+        if args.medios:
+            procesar_nuevos_medios(limite_leads=limite, lead_id_especifico=args.id, regenerar=args.regenerate)
+        else:
+            procesar_nuevos_leads(limite_leads=limite, lead_id_especifico=args.id, regenerar=args.regenerate)
+    elif args.banda:
+        if args.medios:
+            procesar_nuevos_medios(limite_leads=limite, regenerar=args.regenerate, band_id=args.banda)
+        else:
+            procesar_nuevos_leads(limite_leads=limite, regenerar=args.regenerate, band_id=args.banda)
     else:
-        procesar_nuevos_leads(limite_leads=limite, lead_id_especifico=args.id, regenerar=args.regenerate)
+        procesar_todas_las_bandas(limite_leads=limite, regenerar=args.regenerate, medios=args.medios)

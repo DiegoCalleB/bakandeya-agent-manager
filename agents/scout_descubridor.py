@@ -17,6 +17,8 @@ import lib.gemini_client as gemini_client
 import lib.estados as estados
 from lib.busqueda import buscar_duckduckgo, formatear_snippets
 
+BAND_ID_DEFAULT = sheets.BAND_ID_DEFAULT
+
 def normalizar_nombre(texto):
     """
     Normaliza el texto quitando acentos, pasándolo a minúsculas y eliminando
@@ -97,13 +99,17 @@ def normalizar_tipo(tipo_str):
             return t[:-1]
         return t
 
-def obtener_queries_busqueda(tipo_individual, region):
+def obtener_queries_busqueda(tipo_individual, region, genero=None):
     """
     Genera variaciones de queries de búsqueda en DuckDuckGo añadiendo explícitamente 'España'
     para garantizar la desambiguación geográfica (ej: Guadalajara España vs Guadalajara México).
+
+    `genero` (opcional): filtro de estilo musical (ej. 'reggae') que se inserta en la query
+    para acotar la búsqueda a ese género — de momento solo tiene efecto en tipo 'festival'.
     """
     t = tipo_individual.lower().strip()
     region_ctx = region if "españa" in region.lower() or "espana" in region.lower() else f"{region} España"
+    genero = (genero or "").strip()
 
     if t == "ayuntamiento":
         return [
@@ -111,6 +117,11 @@ def obtener_queries_busqueda(tipo_individual, region):
             f"concellos ayuntamientos cultura festejos {region_ctx}"
         ]
     elif t == "festival":
+        if genero:
+            return [
+                f"festivales de musica {genero} {region_ctx}",
+                f"festival {genero} carteles ediciones {region_ctx}"
+            ]
         return [
             f"festivales de musica ciclos conciertos {region_ctx}",
             f"festival de musica eventos carteles {region_ctx}"
@@ -141,17 +152,31 @@ def obtener_queries_busqueda(tipo_individual, region):
             f"{t}s locales cultura en vivo {region_ctx}"
         ]
 
-def extraer_candidatos_con_ia(resultados, tipo, region):
+def extraer_candidatos_con_ia(resultados, tipo, region, genero=None):
     """
     Utiliza Gemini para analizar snippets de búsqueda y extraer nombres de candidatos estructurados.
+
+    `genero` (opcional): si se especifica, se añade una regla de filtrado estricta para
+    descartar candidatos que no sean claramente de ese estilo musical.
     """
     if not resultados:
         return []
 
     res_str = formatear_snippets(resultados)
+    genero = (genero or "").strip()
+
+    regla_genero = (
+        f"6. FILTRO DE GÉNERO (CRÍTICO): Extrae ÚNICAMENTE entidades cuya programación esté "
+        f"centrada de verdad en el género '{genero}' (según lo que digan los propios snippets). "
+        f"Si el snippet no menciona '{genero}' ni nada claramente relacionado, descarta ese "
+        "candidato aunque encaje en el tipo general — es mejor devolver menos resultados que "
+        "colar festivales de otro estilo.\n"
+        if genero else ""
+    )
 
     prompt = (
-        f"Analiza los siguientes resultados de búsqueda web para encontrar nombres de {tipo} en la provincia/región de '{region}' (ESPAÑA):\n\n"
+        f"Analiza los siguientes resultados de búsqueda web para encontrar nombres de {tipo}"
+        f"{f' de género {genero}' if genero else ''} en la provincia/región de '{region}' (ESPAÑA):\n\n"
         f"{res_str}\n"
         f"Tu objetivo es extraer una lista de entidades reales de tipo '{tipo}' pertenecientes a la zona geográfica de '{region}' en España.\n"
         "Reglas estrictas:\n"
@@ -161,6 +186,7 @@ def extraer_candidatos_con_ia(resultados, tipo, region):
         "4. GROUNDING: no inventes entidades. Extrae SOLO las que aparezcan explícitamente en los\n"
         "   snippets de arriba. Para cada candidato, 'fuente' debe ser el índice del snippet que lo\n"
         "   respalda (ej: '[3]'). Si no puedes señalar un snippet concreto, NO incluyas ese candidato.\n"
+        f"{regla_genero}"
         "5. Devuelve un objeto JSON con este esquema exacto:\n"
         "{\n"
         "  \"candidatos\": [\n"
@@ -196,10 +222,14 @@ def extraer_candidatos_con_ia(resultados, tipo, region):
         print(f"[scout_descubridor.py] Error al parsear JSON de Gemini: {e}. Respuesta: {ans}")
         return []
 
-def descubrir_y_añadir_leads(region, tipo, limite=10):
+def descubrir_y_añadir_leads(region, tipo, limite=10, band_id=BAND_ID_DEFAULT, genero=None):
     """
     Busca leads de uno o varios tipos específicos (separados por comas o lista) en una región/provincia,
     los deduplica contra los existentes en la Google Sheet, y los crea masivamente en estado 'nuevo'.
+
+    `genero` (opcional): filtro de estilo musical (ej. 'reggae') que acota tanto la búsqueda
+    como la extracción con IA, y se guarda directamente como 'genero' del lead creado (ya no
+    hace falta que scout.py lo adivine después).
     """
     tipos_raw = []
     if isinstance(tipo, (list, tuple)):
@@ -223,7 +253,7 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
     
     # 1. Generar búsquedas variadas (multi-query) y extraer candidatos por cada tipo individual
     for tipo_individual in tipos:
-        queries = obtener_queries_busqueda(tipo_individual, region)
+        queries = obtener_queries_busqueda(tipo_individual, region, genero=genero)
         resultados_combinados = []
         urls_vistas = set()
 
@@ -235,18 +265,20 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
                 if href not in urls_vistas:
                     urls_vistas.add(href)
                     resultados_combinados.append(r)
-        
+
         if not resultados_combinados:
             print(f"[scout_descubridor.py] No se obtuvieron resultados para tipo '{tipo_individual}'. Saltando.")
             continue
-            
-        candidatos = extraer_candidatos_con_ia(resultados_combinados, tipo_individual, region)
+
+        candidatos = extraer_candidatos_con_ia(resultados_combinados, tipo_individual, region, genero=genero)
         print(f"[scout_descubridor.py] IA extrajo {len(candidatos)} posibles candidatos de tipo '{tipo_individual}'.")
-        
-        # Guardar la asignación del tipo correspondiente
+
+        # Guardar la asignación del tipo correspondiente (y el género, si se ha filtrado por uno)
         for c in candidatos:
             c["tipo"] = tipo_individual
-            
+            if genero:
+                c["genero"] = genero
+
         todos_candidatos.extend(candidatos)
         
     if not todos_candidatos:
@@ -284,7 +316,9 @@ def descubrir_y_añadir_leads(region, tipo, limite=10):
             "ciudad": ciudad or region,
             "region": region,  # Guardar la provincia/región real solicitada (ej. Guadalajara, Pontevedra)
             "tipo": tipo_cand,
-            "fuente": f"Scout Descubridor: {region}",
+            "genero": cand.get("genero") or "",
+            "band_id": band_id,
+            "fuente": f"Scout Descubridor: {region}" + (f" (género: {genero})" if genero else ""),
             "estado": estados.NUEVO,
             "notas": (
                 f"Descubierto automáticamente por el agente Scout Descubridor (tipo: {tipo_cand})"
@@ -337,8 +371,10 @@ if __name__ == "__main__":
         help="Tipo(s) de entidad a buscar. Puedes especificarlo varias veces (--tipo discotecas --tipo festivales) o separado por comas (--tipo 'discotecas,festivales')."
     )
     parser.add_argument("--limit", type=int, default=10, help="Límite máximo de nuevos leads a añadir.")
+    parser.add_argument("--banda", type=str, default=BAND_ID_DEFAULT, help="band_id al que pertenecen los leads descubiertos (multi-tenant). Por defecto, band-bakandeya.")
+    parser.add_argument("--genero", type=str, default=None, help="Filtro de estilo musical (ej. 'reggae') que acota la búsqueda y se guarda como género del lead. Solo tiene efecto real en tipo 'festival' por ahora.")
     args = parser.parse_args()
     
-    descubrir_y_añadir_leads(region=args.region, tipo=args.tipo, limite=args.limit)
+    descubrir_y_añadir_leads(region=args.region, tipo=args.tipo, limite=args.limit, band_id=args.banda, genero=args.genero)
 
 

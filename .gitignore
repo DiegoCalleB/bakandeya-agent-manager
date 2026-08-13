@@ -3,6 +3,8 @@
 credentials_service_account.json
 credentials.json
 token.json
+# Multi-tenant: token OAuth de Gmail propio de cada banda que no sea band-bakandeya
+tokens/
 
 # Entorno virtual de Python
 .venv/
@@ -23,3 +25,4 @@ __pycache__/
 
 # Artefactos generados por los agentes (borradores con emails reales de contactos: no versionar)
 drafts/
+scratch/

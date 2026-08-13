@@ -139,7 +139,7 @@ def responder_leads_interesados():
         contacto_info = epk.get("contacto", {})
         c_nombre = contacto_info.get("nombre", "Bakandeya")
         c_telefono = contacto_info.get("telefono", "+34 652938521")
-        c_email = contacto_info.get("email", "Bakandeya@gmail.com")
+        c_email = contacto_info.get("email", "diego.delacalleb@gmail.com")
         c_rol = contacto_info.get("rol", "Contacto oficial de la banda")
 
         instruccion_sistema = (

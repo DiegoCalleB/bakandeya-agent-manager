@@ -70,6 +70,46 @@ def test_scout_enriquecimiento(mocker, mock_db):
     assert lead_003["aforo"] == 250
     assert lead_003["tipo"] == "sala"
 
+def test_scout_usa_google_places_para_direccion_telefono_web(mocker, mock_db):
+    """
+    Si Google Places está configurado, sus datos de dirección/teléfono/web se aceptan
+    directamente (confianza alta, sin pasar por el LLM) y tienen prioridad sobre lo que
+    encuentre después la búsqueda por snippets (_combinar no sobrescribe lo ya aportado).
+    Places nunca aporta email — eso lo sigue resolviendo la búsqueda de siempre.
+    """
+    lead_001 = next(l for l in mock_db if l["id"] == "lead_001")
+    lead_001["telefono"] = "913 65 24 15"
+    lead_001["website"] = "https://salaelsol.com"
+    lead_001["instagram"] = "@salaelsol"
+
+    mocker.patch("agents.scout.google_places.esta_configurado", return_value=True)
+    mocker.patch("agents.scout.google_places.buscar_lugar", return_value={
+        "direccion": "Rúa Marqués de Riestra, 34, 36001 Pontevedra",
+        "telefono": "+34 986 999888",
+        "website": "https://salakarma.es",
+    })
+
+    # La búsqueda por snippets encuentra el email (Places no lo tiene) y, si aportara otro
+    # teléfono/web, no debería ganarle al de Places por ser la primera fuente combinada.
+    mocker.patch("agents.scout.buscar_duckduckgo", return_value=[
+        {"title": "Sala Karma Pontevedra", "href": "https://salakarma.es", "body": "info@salakarma.es"}
+    ])
+    mocker.patch("agents.scout.extraer_datos_contacto_de_snippets", return_value={
+        "email": "info@salakarma.es",
+        "telefono": "+34 986 112233",  # no debería ganar: Places ya aportó teléfono antes
+    })
+    mocker.patch("agents.scout.descargar_texto_pagina", return_value=("", []))
+
+    enriquecidos = enriquecer_leads_sin_contacto(limite_leads=1)
+    assert len(enriquecidos) == 1
+
+    lead_003 = next(l for l in mock_db if l["id"] == "lead_003")
+    assert lead_003["email_contacto"] == "info@salakarma.es"
+    assert lead_003["telefono"] == "+34 986 999888"  # el de Places, no el del snippet
+    assert lead_003["direccion"] == "Rúa Marqués de Riestra, 34, 36001 Pontevedra"
+    assert lead_003["website"] == "https://salakarma.es"
+
+
 def test_scout_mueve_a_sin_contacto_sin_email(mocker, mock_db):
     """
     Coordinación de estados: un lead 'nuevo' que tras búsqueda exhaustiva no consigue email
